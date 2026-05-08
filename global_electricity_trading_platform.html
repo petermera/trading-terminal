@@ -1,0 +1,465 @@
+
+<h2 class="sr-only">Global Electricity Markets Interactive Trading Platform — live simulated prices across EPEX, Nord Pool, OMIE, and balancing markets</h2>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-mono); }
+.platform { padding: 8px 0; }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); margin-bottom: 10px; }
+.topbar-left { display: flex; align-items: center; gap: 16px; }
+.logo { font-size: 13px; font-weight: 500; color: var(--color-text-primary); letter-spacing: 0.06em; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #639922; display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.status-txt { font-size: 11px; color: #639922; font-family: var(--font-mono); }
+.clock { font-size: 12px; color: var(--color-text-secondary); font-family: var(--font-mono); }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.tab { padding: 6px 14px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); background: var(--color-background-primary); font-size: 12px; font-family: var(--font-mono); cursor: pointer; color: var(--color-text-secondary); transition: all 0.15s; }
+.tab.active { border-color: #185FA5; color: #185FA5; background: #E6F1FB; }
+.tab:hover:not(.active) { background: var(--color-background-secondary); color: var(--color-text-primary); }
+.main-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.market-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; position: relative; overflow: hidden; }
+.market-card:hover { border-color: var(--color-border-secondary); }
+.market-card.selected { border-color: #185FA5; }
+.mc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+.mc-name { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); }
+.mc-product { font-size: 10px; color: var(--color-text-tertiary); font-family: var(--font-mono); }
+.mc-price { font-size: 20px; font-weight: 500; font-family: var(--font-mono); color: var(--color-text-primary); }
+.mc-change { font-size: 11px; font-family: var(--font-mono); margin-top: 2px; }
+.up { color: #3B6D11; }
+.down { color: #A32D2D; }
+.neutral { color: var(--color-text-secondary); }
+.spark { width: 100%; height: 28px; margin-top: 6px; }
+.bottom-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px; }
+.panel { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; }
+.panel-title { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); margin-bottom: 10px; letter-spacing: 0.05em; border-bottom: 0.5px solid var(--color-border-tertiary); padding-bottom: 8px; }
+.chart-panel { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; margin-bottom: 8px; }
+.chart-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.chart-title { font-size: 12px; font-weight: 500; color: var(--color-text-primary); font-family: var(--font-mono); }
+.chart-meta { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); }
+.ob-row { display: grid; grid-template-columns: 1fr 0.8fr 1fr; gap: 4px; padding: 3px 0; font-size: 11px; font-family: var(--font-mono); border-bottom: 0.5px solid var(--color-border-tertiary); position: relative; }
+.ob-row:last-child { border-bottom: none; }
+.ob-vol { color: var(--color-text-secondary); text-align: right; }
+.ob-price-bid { color: #3B6D11; font-weight: 500; text-align: center; }
+.ob-price-ask { color: #A32D2D; font-weight: 500; text-align: center; }
+.ob-depth-bid { position: absolute; right: 50%; top: 0; height: 100%; background: #EAF3DE; opacity: 0.5; z-index: 0; }
+.ob-depth-ask { position: absolute; left: 50%; top: 0; height: 100%; background: #FCEBEB; opacity: 0.5; z-index: 0; }
+.ob-spread { text-align: center; padding: 5px 0; font-size: 10px; color: var(--color-text-secondary); font-family: var(--font-mono); border-top: 0.5px dashed var(--color-border-tertiary); border-bottom: 0.5px dashed var(--color-border-tertiary); margin: 3px 0; }
+.pos-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 11px; font-family: var(--font-mono); border-bottom: 0.5px solid var(--color-border-tertiary); }
+.pos-row:last-child { border-bottom: none; }
+.pos-market { color: var(--color-text-primary); }
+.pos-vol { color: var(--color-text-secondary); }
+.pos-pnl { font-weight: 500; }
+.trade-btn { width: 100%; padding: 8px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); font-size: 12px; font-family: var(--font-mono); cursor: pointer; margin-bottom: 5px; transition: all 0.15s; }
+.buy-btn { background: #EAF3DE; color: #3B6D11; border-color: #97C459; }
+.buy-btn:hover { background: #C0DD97; }
+.sell-btn { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
+.sell-btn:hover { background: #F7C1C1; }
+.trade-input { width: 100%; padding: 7px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); font-size: 12px; font-family: var(--font-mono); color: var(--color-text-primary); background: var(--color-background-secondary); margin-bottom: 5px; }
+.kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.kpi { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 8px 10px; }
+.kpi-label { font-size: 10px; color: var(--color-text-tertiary); font-family: var(--font-mono); margin-bottom: 3px; }
+.kpi-val { font-size: 15px; font-weight: 500; font-family: var(--font-mono); color: var(--color-text-primary); }
+.spread-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 11px; font-family: var(--font-mono); border-bottom: 0.5px solid var(--color-border-tertiary); }
+.spread-row:last-child { border-bottom: none; }
+.spread-name { color: var(--color-text-secondary); }
+.spread-val { font-weight: 500; }
+.ticker-bar { display: flex; gap: 0; overflow: hidden; margin-bottom: 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); padding: 7px 14px; }
+.tick-item { display: flex; align-items: center; gap: 6px; margin-right: 24px; white-space: nowrap; font-size: 11px; font-family: var(--font-mono); }
+.tick-name { color: var(--color-text-secondary); }
+.tick-price { color: var(--color-text-primary); font-weight: 500; }
+.trade-log { max-height: 120px; overflow-y: auto; }
+.log-row { font-size: 10px; font-family: var(--font-mono); color: var(--color-text-secondary); padding: 2px 0; border-bottom: 0.5px solid var(--color-border-tertiary); display: flex; gap: 6px; }
+.log-row:last-child { border-bottom: none; }
+.log-time { color: var(--color-text-tertiary); }
+.log-side-buy { color: #3B6D11; }
+.log-side-sell { color: #A32D2D; }
+</style>
+
+<div class="platform">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="logo">⚡ VOLT TERMINAL</span>
+      <span><span class="status-dot"></span><span class="status-txt">LIVE SIM</span></span>
+      <span class="clock" id="clk">--:--:-- UTC</span>
+    </div>
+    <div style="display:flex;gap:16px;align-items:center;">
+      <span style="font-size:11px;font-family:var(--font-mono);color:var(--color-text-secondary);">Total P&L: <span id="total-pnl" style="font-weight:500;color:#3B6D11;">+€0</span></span>
+      <span style="font-size:11px;font-family:var(--font-mono);color:var(--color-text-secondary);">Open positions: <span id="open-pos" style="font-weight:500;color:var(--color-text-primary);">3</span></span>
+    </div>
+  </div>
+
+  <div class="ticker-bar" id="ticker-bar"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="setTab('da',this)">Day-Ahead</button>
+    <button class="tab" onclick="setTab('ida',this)">Intraday</button>
+    <button class="tab" onclick="setTab('bal',this)">Balancing</button>
+    <button class="tab" onclick="setTab('spread',this)">Spread Analysis</button>
+  </div>
+
+  <div id="market-grid" class="main-grid"></div>
+
+  <div class="chart-panel">
+    <div class="chart-row">
+      <span class="chart-title" id="chart-title">EPEX DE — Day-Ahead Price Curve (€/MWh)</span>
+      <span class="chart-meta" id="chart-meta">Delivery: Tomorrow | H1–H24</span>
+    </div>
+    <div style="position:relative;width:100%;height:200px;">
+      <canvas id="mainChart" role="img" aria-label="Electricity day-ahead price curve for selected market, hourly €/MWh values">Price data loading...</canvas>
+    </div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="panel-title">ORDER BOOK — <span id="ob-market">EPEX DE</span></div>
+      <div style="display:grid;grid-template-columns:1fr 0.8fr 1fr;gap:4px;margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);">VOL (MWh)</span>
+        <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);text-align:center;">PRICE</span>
+        <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);text-align:right;">VOL (MWh)</span>
+      </div>
+      <div id="order-book"></div>
+      <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">EXECUTE QTY</div><input class="trade-input" type="number" id="trade-qty" value="10" min="1" max="500" style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
+          <div class="kpi"><div class="kpi-label">LIMIT PRICE</div><input class="trade-input" type="number" id="trade-px" value="0" style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
+        </div>
+        <button class="trade-btn buy-btn" onclick="executeTrade('BUY')">BUY (LONG)</button>
+        <button class="trade-btn sell-btn" onclick="executeTrade('SELL')">SELL (SHORT)</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">OPEN POSITIONS</div>
+      <div id="positions"></div>
+      <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
+        <div class="panel-title" style="margin-bottom:6px;">TRADE LOG</div>
+        <div class="trade-log" id="trade-log"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">MARKET SPREADS & STATS</div>
+      <div id="spreads"></div>
+      <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
+        <div class="panel-title" style="margin-bottom:6px;">SESSION KPIs</div>
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">VWAP TODAY</div><div class="kpi-val" id="kpi-vwap">—</div></div>
+          <div class="kpi"><div class="kpi-label">SESSION HIGH</div><div class="kpi-val" id="kpi-high">—</div></div>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">SESSION LOW</div><div class="kpi-val" id="kpi-low">—</div></div>
+          <div class="kpi"><div class="kpi-label">VOL TRADED</div><div class="kpi-val" id="kpi-vol">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const DA_MARKETS = [
+  { id:'epex-de', name:'EPEX DE', region:'DACH', base:85, vol:18 },
+  { id:'epex-fr', name:'EPEX FR', region:'W.EU', base:82, vol:15 },
+  { id:'epex-at', name:'EPEX AT', region:'DACH', base:87, vol:17 },
+  { id:'epex-be', name:'EPEX BE', region:'W.EU', base:83, vol:14 },
+  { id:'omie-es', name:'OMIE ES', region:'Iberia', base:78, vol:12 },
+  { id:'omie-pt', name:'OMIE PT', region:'Iberia', base:79, vol:12 },
+  { id:'np-dk1', name:'NP DK1', region:'Nordic', base:72, vol:20 },
+  { id:'np-no1', name:'NP NO1', region:'Nordic', base:65, vol:22 },
+  { id:'n2ex-uk', name:'N2EX UK', region:'UK', base:91, vol:16 },
+];
+const IDA_MARKETS = [
+  { id:'ida-de', name:'IDA DE', region:'DACH', base:84, vol:22 },
+  { id:'ida-fr', name:'IDA FR', region:'W.EU', base:81, vol:19 },
+  { id:'ida-es', name:'IDA ES', region:'Iberia', base:77, vol:15 },
+  { id:'ida-it', name:'GME IT', region:'Italy', base:92, vol:14 },
+  { id:'ida-pl', name:'TGE PL', region:'CEE', base:88, vol:18 },
+  { id:'ida-nl', name:'EPEX NL', region:'W.EU', base:83, vol:14 },
+];
+const BAL_MARKETS = [
+  { id:'afrr-de', name:'aFRR DE', region:'DACH', base:95, vol:35, product:'aFRR cap' },
+  { id:'mfrr-de', name:'mFRR DE', region:'DACH', base:120, vol:45, product:'mFRR cap' },
+  { id:'fcr-eu', name:'FCR EU', region:'EU', base:28, vol:12, product:'FCR' },
+  { id:'afrr-es', name:'aFRR ES', region:'Iberia', base:88, vol:30, product:'aFRR' },
+  { id:'rr-eu', name:'RR EU', region:'EU', base:75, vol:18, product:'RR' },
+  { id:'imbalance-de', name:'Imbal. DE', region:'DACH', base:110, vol:60, product:'Imbalance' },
+];
+
+const SPREAD_PAIRS = [
+  { name:'DE–FR', a:'epex-de', b:'epex-fr' },
+  { name:'DE–AT', a:'epex-de', b:'epex-at' },
+  { name:'ES–PT', a:'omie-es', b:'omie-pt' },
+  { name:'DE–DK1', a:'epex-de', b:'np-dk1' },
+  { name:'UK–FR', a:'n2ex-uk', b:'epex-fr' },
+  { name:'IT–DE', a:'ida-it', b:'ida-de' },
+];
+
+let currentTab = 'da';
+let selectedMarket = DA_MARKETS[0];
+let markets = {};
+let mainChartInst = null;
+let priceHistory = {};
+let sessionHigh = -Infinity, sessionLow = Infinity, sessionVol = 0, sessionVwapSum = 0, sessionVwapVol = 0;
+let positions = [
+  { market:'EPEX DE', side:'BUY', qty:50, entryPx:84.20, id:'p1' },
+  { market:'OMIE ES', side:'SELL', qty:30, entryPx:77.50, id:'p2' },
+  { market:'aFRR DE', side:'BUY', qty:20, entryPx:93.00, id:'p3' },
+];
+let tradeLog = [];
+
+function rnd(base, vol) { return base + (Math.random()-0.5)*vol; }
+
+function initMarkets(list) {
+  list.forEach(m => {
+    if(!markets[m.id]) {
+      markets[m.id] = { ...m, price: rnd(m.base, m.vol), prev: 0, change: 0 };
+      markets[m.id].prev = markets[m.id].price;
+      priceHistory[m.id] = Array.from({length:24},(_,i)=>rnd(m.base + Math.sin(i/3)*8, m.vol*0.6));
+    }
+  });
+}
+
+function getCurrentList() {
+  if(currentTab==='da') return DA_MARKETS;
+  if(currentTab==='ida') return IDA_MARKETS;
+  if(currentTab==='bal') return BAL_MARKETS;
+  return DA_MARKETS;
+}
+
+function tickPrices() {
+  const all = [...DA_MARKETS,...IDA_MARKETS,...BAL_MARKETS];
+  all.forEach(m => {
+    if(!markets[m.id]) return;
+    const mk = markets[m.id];
+    const drift = (m.base - mk.price)*0.03;
+    const noise = (Math.random()-0.48)*m.vol*0.12;
+    mk.prev = mk.price;
+    mk.price = Math.max(10, mk.price + drift + noise);
+    mk.change = mk.price - mk.prev;
+    if(priceHistory[m.id]) priceHistory[m.id].push(mk.price);
+  });
+  if(markets[selectedMarket.id]) {
+    const p = markets[selectedMarket.id].price;
+    if(p > sessionHigh) sessionHigh = p;
+    if(p < sessionLow) sessionLow = p;
+    sessionVwapSum += p; sessionVwapVol++;
+  }
+}
+
+function renderGrid() {
+  const list = getCurrentList();
+  const grid = document.getElementById('market-grid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  list.forEach(m => {
+    const mk = markets[m.id];
+    if(!mk) return;
+    const isUp = mk.change >= 0;
+    const pct = ((mk.price - m.base)/m.base*100).toFixed(1);
+    const sparkId = 'spark-'+m.id;
+    const card = document.createElement('div');
+    card.className = 'market-card' + (selectedMarket.id===m.id?' selected':'');
+    card.onclick = () => selectMarket(m);
+    const hist = (priceHistory[m.id]||[]).slice(-10);
+    card.innerHTML = `<div class="mc-header"><div><div class="mc-name">${m.name}</div><div class="mc-product">${m.region} ${m.product||'DA'}</div></div><div style="font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:4px;background:${isUp?'#EAF3DE':'#FCEBEB'};color:${isUp?'#3B6D11':'#A32D2D'}">${isUp?'+':''}${pct}%</div></div><div class="mc-price">${mk.price.toFixed(2)}</div><div class="mc-change ${isUp?'up':'down'}">${isUp?'▲':'▼'} ${Math.abs(mk.change).toFixed(2)} €/MWh</div><svg class="spark" viewBox="0 0 80 28"><polyline points="${hist.map((v,i)=>`${i*(80/(hist.length-1))},${28-(v-Math.min(...hist))/(Math.max(...hist)-Math.min(...hist)+0.1)*24}`).join(' ')}" fill="none" stroke="${isUp?'#639922':'#A32D2D'}" stroke-width="1.5"/></svg>`;
+    grid.appendChild(card);
+  });
+}
+
+function selectMarket(m) {
+  selectedMarket = markets[m.id] ? markets[m.id] : m;
+  selectedMarket = { ...m, ...markets[m.id] };
+  sessionHigh=-Infinity; sessionLow=Infinity; sessionVwapSum=0; sessionVwapVol=0;
+  updateChart();
+  document.getElementById('ob-market').textContent = m.name;
+  document.getElementById('chart-title').textContent = `${m.name} — ${currentTab==='bal'?(m.product||'Balancing'):currentTab==='ida'?'Intraday':'Day-Ahead'} Price Curve (€/MWh)`;
+  renderGrid();
+}
+
+function renderOrderBook() {
+  const mk = markets[selectedMarket.id];
+  if(!mk) return;
+  const mid = mk.price;
+  const ob = document.getElementById('order-book');
+  if(!ob) return;
+  const spread = mk.vol*0.02;
+  let html = '';
+  for(let i=4;i>=1;i--) {
+    const px = mid + spread*i + (Math.random()-0.5)*0.3;
+    const vol = (Math.random()*80+10).toFixed(0);
+    const depth = Math.min(90, vol*0.8);
+    html += `<div class="ob-row"><div class="ob-vol" style="position:relative;z-index:1;"></div><div class="ob-price-ask" style="position:relative;z-index:1;">${px.toFixed(2)}</div><div class="ob-vol" style="position:relative;z-index:1;color:#A32D2D;">${vol}</div><div class="ob-depth-ask" style="width:${depth}%"></div></div>`;
+  }
+  html += `<div class="ob-spread">spread: ${(spread*2).toFixed(2)} €/MWh | mid: ${mid.toFixed(2)}</div>`;
+  for(let i=1;i<=4;i++) {
+    const px = mid - spread*i + (Math.random()-0.5)*0.3;
+    const vol = (Math.random()*80+10).toFixed(0);
+    const depth = Math.min(90, vol*0.8);
+    html += `<div class="ob-row"><div class="ob-vol" style="position:relative;z-index:1;color:#3B6D11;">${vol}</div><div class="ob-price-bid" style="position:relative;z-index:1;">${px.toFixed(2)}</div><div class="ob-vol" style="position:relative;z-index:1;"></div><div class="ob-depth-bid" style="width:${depth}%"></div></div>`;
+  }
+  ob.innerHTML = html;
+  const mk2 = markets[selectedMarket.id];
+  if(mk2) document.getElementById('trade-px').value = mk2.price.toFixed(2);
+}
+
+function renderPositions() {
+  const el = document.getElementById('positions');
+  if(!el) return;
+  let totalPnl = 0;
+  let html = '';
+  positions.forEach(p => {
+    const mk = Object.values(markets).find(m=>m.name===p.market);
+    const curPx = mk ? mk.price : p.entryPx;
+    const pnl = (p.side==='BUY'?1:-1)*(curPx-p.entryPx)*p.qty;
+    totalPnl += pnl;
+    html += `<div class="pos-row"><div><div class="pos-market">${p.market}</div><div class="pos-vol" style="font-size:10px;">${p.side} ${p.qty}MWh @ ${p.entryPx.toFixed(2)}</div></div><div class="pos-pnl ${pnl>=0?'up':'down'}">${pnl>=0?'+':''}€${pnl.toFixed(0)}</div></div>`;
+  });
+  el.innerHTML = html;
+  document.getElementById('total-pnl').textContent = (totalPnl>=0?'+':'')+'€'+totalPnl.toFixed(0);
+  document.getElementById('total-pnl').className = totalPnl>=0?'up':'down';
+  document.getElementById('open-pos').textContent = positions.length;
+}
+
+function renderSpreads() {
+  const el = document.getElementById('spreads');
+  if(!el) return;
+  let html = '';
+  SPREAD_PAIRS.forEach(sp => {
+    const a = Object.values(markets).find(m=>m.id===sp.a);
+    const b = Object.values(markets).find(m=>m.id===sp.b);
+    if(!a||!b) return;
+    const diff = a.price - b.price;
+    const isPos = diff >= 0;
+    html += `<div class="spread-row"><span class="spread-name">${sp.name}</span><span class="spread-val ${isPos?'up':'down'}">${isPos?'+':''}${diff.toFixed(2)} €/MWh</span></div>`;
+  });
+  el.innerHTML = html;
+}
+
+function renderKPIs() {
+  const vwap = sessionVwapVol > 0 ? (sessionVwapSum/sessionVwapVol) : 0;
+  document.getElementById('kpi-vwap').textContent = vwap>0?vwap.toFixed(2)+'€':'—';
+  document.getElementById('kpi-high').textContent = sessionHigh>-Infinity?sessionHigh.toFixed(2)+'€':'—';
+  document.getElementById('kpi-low').textContent = sessionLow<Infinity?sessionLow.toFixed(2)+'€':'—';
+  document.getElementById('kpi-vol').textContent = sessionVol>0?sessionVol+'MWh':'—';
+}
+
+function renderTicker() {
+  const bar = document.getElementById('ticker-bar');
+  if(!bar) return;
+  const show = [DA_MARKETS[0],DA_MARKETS[4],DA_MARKETS[8],IDA_MARKETS[0],BAL_MARKETS[0],BAL_MARKETS[2]];
+  bar.innerHTML = show.map(m=>{
+    const mk = markets[m.id];
+    if(!mk) return '';
+    const isUp = mk.change>=0;
+    return `<div class="tick-item"><span class="tick-name">${m.name}</span><span class="tick-price">${mk.price.toFixed(2)}</span><span class="${isUp?'up':'down'}" style="font-size:10px;">${isUp?'▲':'▼'}${Math.abs(mk.change).toFixed(2)}</span></div>`;
+  }).join('');
+}
+
+function renderTradeLog() {
+  const el = document.getElementById('trade-log');
+  if(!el) return;
+  el.innerHTML = tradeLog.slice(-8).reverse().map(t=>
+    `<div class="log-row"><span class="log-time">${t.time}</span><span class="log-side-${t.side.toLowerCase()}">${t.side}</span><span>${t.qty}MWh ${t.market} @ ${t.px}</span><span class="${t.pnl>=0?'up':'down'}">${t.pnl>=0?'+':''}€${t.pnl.toFixed(0)}</span></div>`
+  ).join('');
+}
+
+function executeTrade(side) {
+  const qty = parseInt(document.getElementById('trade-qty').value)||10;
+  const px = parseFloat(document.getElementById('trade-px').value)||selectedMarket.price||85;
+  const now = new Date();
+  const timeStr = now.getUTCHours().toString().padStart(2,'0')+':'+now.getUTCMinutes().toString().padStart(2,'0')+':'+now.getUTCSeconds().toString().padStart(2,'0');
+  const curPx = markets[selectedMarket.id]?markets[selectedMarket.id].price:px;
+  const slippage = (Math.random()*0.3+0.05)*(side==='BUY'?1:-1);
+  const fillPx = curPx + slippage;
+  const pnl = (side==='BUY'?1:-1)*(curPx-fillPx)*qty;
+  tradeLog.push({ time:timeStr, side, qty, market:selectedMarket.name||'EPEX DE', px:fillPx.toFixed(2), pnl });
+  sessionVol += qty;
+  positions.push({ market:selectedMarket.name||'EPEX DE', side, qty, entryPx:fillPx, id:'t'+Date.now() });
+  renderTradeLog();
+  renderPositions();
+  renderKPIs();
+}
+
+function updateChart() {
+  const mk = markets[selectedMarket.id];
+  if(!mk||!priceHistory[selectedMarket.id]) return;
+  const hist = priceHistory[selectedMarket.id].slice(-24);
+  const labels = Array.from({length:hist.length},(_,i)=>i<10?`H0${i}`:`H${i}`);
+  if(!mainChartInst) return;
+  mainChartInst.data.labels = labels;
+  mainChartInst.data.datasets[0].data = hist.map(v=>parseFloat(v.toFixed(2)));
+  const avg = hist.reduce((a,b)=>a+b,0)/hist.length;
+  mainChartInst.data.datasets[1].data = hist.map(()=>parseFloat(avg.toFixed(2)));
+  mainChartInst.update('none');
+}
+
+function initChart() {
+  const ctx = document.getElementById('mainChart');
+  if(!ctx) return;
+  const mk = markets[selectedMarket.id];
+  const hist = mk?(priceHistory[selectedMarket.id]||[]).slice(-24):Array.from({length:24},()=>85);
+  const labels = Array.from({length:hist.length},(_,i)=>i<10?`H0${i}`:`H${i}`);
+  const avg = hist.reduce((a,b)=>a+b,0)/hist.length;
+  mainChartInst = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        { label:'Price (€/MWh)', data:hist.map(v=>parseFloat(v.toFixed(2))), borderColor:'#185FA5', backgroundColor:'rgba(55,138,221,0.08)', borderWidth:1.5, pointRadius:1.5, pointBackgroundColor:'#185FA5', tension:0.35, fill:true },
+        { label:'Avg', data:hist.map(()=>parseFloat(avg.toFixed(2))), borderColor:'#BA7517', borderWidth:1, borderDash:[4,4], pointRadius:0, tension:0 }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(c)=>`${c.dataset.label}: €${c.raw.toFixed(2)}/MWh` } } },
+      scales:{
+        x:{ grid:{color:'rgba(128,128,128,0.08)'}, ticks:{font:{size:10,family:'monospace'},color:'#888',maxTicksLimit:12} },
+        y:{ grid:{color:'rgba(128,128,128,0.08)'}, ticks:{font:{size:10,family:'monospace'},color:'#888',callback:v=>`€${v}`} }
+      }
+    }
+  });
+}
+
+function setTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  const list = getCurrentList();
+  initMarkets(list);
+  selectedMarket = list[0];
+  selectMarket(list[0]);
+  if(tab==='spread') {
+    document.getElementById('chart-title').textContent = 'Cross-Market Spread Analysis (€/MWh)';
+  }
+  renderGrid();
+}
+
+function updateClock() {
+  const now = new Date();
+  const s = now.getUTCHours().toString().padStart(2,'0')+':'+now.getUTCMinutes().toString().padStart(2,'0')+':'+now.getUTCSeconds().toString().padStart(2,'0')+' UTC';
+  const el = document.getElementById('clk');
+  if(el) el.textContent = s;
+}
+
+function fullRender() {
+  tickPrices();
+  renderGrid();
+  renderOrderBook();
+  renderPositions();
+  renderSpreads();
+  renderKPIs();
+  renderTicker();
+  updateChart();
+  updateClock();
+}
+
+initMarkets(DA_MARKETS);
+initMarkets(IDA_MARKETS);
+initMarkets(BAL_MARKETS);
+
+setTimeout(()=>{
+  initChart();
+  fullRender();
+  setInterval(fullRender, 1800);
+  setInterval(updateClock, 1000);
+}, 100);
+</script>
