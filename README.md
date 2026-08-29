@@ -26,3 +26,7 @@ Use this repository for lightweight experiments. Put shared documentation, data-
 A real feed should identify the source, market, bidding zone, product, delivery interval, timezone, unit, publication time, and data vintage. Simulated and observed values must remain visibly different.
 
 The planned data foundation is [`petermera/eu-grid-data-connectors`](https://github.com/petermera/eu-grid-data-connectors).
+
+## How experiments move forward
+
+Read [`docs/EXPERIMENT_POLICY.md`](docs/EXPERIMENT_POLICY.md) for the experiment card, graduation checks, archive rules, and proposed next tests.
