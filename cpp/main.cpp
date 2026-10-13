@@ -171,11 +171,22 @@ class Terminal {
   }
 
   void selectMarket(Market* market) {
+    if (std::any_of(dayAhead_.begin(), dayAhead_.end(),
+                    [market](const Market& item) { return &item == market; })) {
+      tab_ = Tab::DayAhead;
+    } else if (std::any_of(intraday_.begin(), intraday_.end(),
+                           [market](const Market& item) { return &item == market; })) {
+      tab_ = Tab::Intraday;
+    } else if (std::any_of(balancing_.begin(), balancing_.end(),
+                           [market](const Market& item) { return &item == market; })) {
+      tab_ = Tab::Balancing;
+    }
     selected_ = market;
     sessionHigh_ = -std::numeric_limits<double>::infinity();
     sessionLow_ = std::numeric_limits<double>::infinity();
     sessionPriceSum_ = 0.0;
     sessionPriceCount_ = 0;
+    updateSessionStats();
     render();
   }
 
@@ -214,7 +225,7 @@ class Terminal {
   }
 
   void render() {
-    std::cout << "\n=== VOLT TERMINAL | LIVE SIM | "
+    std::cout << "\n=== VOLT TERMINAL | SIMULATED DATA | "
               << utcTime() << " UTC ===\n";
     std::cout << "Market tab: " << tabName() << " | Selected: "
               << selected_->name << " | Total P&L: "
@@ -315,7 +326,7 @@ class Terminal {
   }
 
   void renderKpis() const {
-    std::cout << "\nSESSION KPIs | VWAP: ";
+    std::cout << "\nSESSION KPIs | AVG PRICE: ";
     if (sessionPriceCount_ == 0) std::cout << "—";
     else std::cout << std::fixed << std::setprecision(2)
                    << sessionPriceSum_ / sessionPriceCount_ << " EUR/MWh";

@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, timingSafeEqual } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 const HOST = '127.0.0.1';
@@ -14,12 +14,15 @@ const DB_FILE = path.resolve(
 const PRICE_API_URL = process.env.VOLT_PRICE_API_URL || 'https://api.energy-charts.info/price';
 const PRICE_API_TIMEOUT_MS = 20_000;
 const PRICE_REFRESH_INTERVAL_MS = 15 * 60_000;
+const SYNC_CHECK_INTERVAL_MS = 60_000;
 const SOURCE_REQUEST_SPACING_MS = Number(process.env.VOLT_SOURCE_REQUEST_SPACING_MS ?? 2000);
 const MAX_QUOTE_AGE_MS = 90 * 60_000;
 const MAX_BODY_BYTES = 16 * 1024;
 const SOURCE_NAME = 'Energy-Charts API';
 const SOURCE_URL = 'https://api.energy-charts.info/';
 const FIRST_HISTORY_MS = 72 * 60 * 60_000;
+const DAY_AHEAD_FORWARD_WINDOW_MS = 48 * 60 * 60_000;
+const WRITE_TOKEN = randomUUID();
 
 const MARKETS = [
   { id: 'epex-de', name: 'EPEX DE/LU', region: 'Germany/Luxembourg', product: 'Day-ahead', biddingZone: 'DE-LU' },
@@ -30,7 +33,7 @@ const MARKETS = [
   { id: 'omie-pt', name: 'OMIE PT', region: 'Portugal', product: 'Day-ahead', biddingZone: 'PT' },
   { id: 'np-dk1', name: 'Nord Pool DK1', region: 'Denmark West', product: 'Day-ahead', biddingZone: 'DK1' },
   { id: 'np-no1', name: 'Nord Pool NO1', region: 'Norway South-East', product: 'Day-ahead', biddingZone: 'NO1' },
-  { id: 'n2ex-uk', name: 'N2EX GB', region: 'Great Britain', product: 'Day-ahead', biddingZone: 'GB' },
+  { id: 'n2ex-uk', name: 'N2EX GB', region: 'Great Britain', product: 'Day-ahead', biddingZone: null },
   { id: 'ida-de', name: 'IDA DE/LU', region: 'Germany/Luxembourg', product: 'Intraday', biddingZone: null },
   { id: 'ida-fr', name: 'IDA FR', region: 'France', product: 'Intraday', biddingZone: null },
   { id: 'ida-es', name: 'IDA ES', region: 'Spain', product: 'Intraday', biddingZone: null },
@@ -194,7 +197,7 @@ function parsePriceFeed(payload, now) {
     const price = Number(payload.price[index]);
     if (!Number.isFinite(timestamp) || !Number.isFinite(price)) continue;
     const interval = new Date(timestamp * 1000);
-    if (Number.isNaN(interval.getTime()) || interval.getTime() > now.getTime()) continue;
+    if (Number.isNaN(interval.getTime())) continue;
     parsed.push({
       intervalStart: interval.toISOString(),
       price,
@@ -214,7 +217,7 @@ function parsePriceFeed(payload, now) {
 async function syncBiddingZone(market, now = new Date()) {
   upsertSyncStatus.run(market.biddingZone, 'syncing', now.toISOString(), null, null);
   const start = new Date(now.getTime() - FIRST_HISTORY_MS);
-  const end = new Date(now.getTime() + 6 * 60 * 60_000);
+  const end = new Date(now.getTime() + DAY_AHEAD_FORWARD_WINDOW_MS);
   const url = new URL(PRICE_API_URL);
   url.searchParams.set('bzn', market.biddingZone);
   url.searchParams.set('start', start.toISOString());
@@ -391,7 +394,8 @@ function snapshot(selectedMarketId = 'epex-de') {
         marketsWithPrices: Object.values(markets).filter((market) => market.price !== null).length
       },
       zoneSync: selectSyncStatus.all()
-    }
+    },
+    writeToken: WRITE_TOKEN
   };
 }
 
@@ -433,8 +437,55 @@ function readJson(request) {
   });
 }
 
+function validateWriteRequest(request, response) {
+  const allowedHosts = new Set([`${HOST}:${PORT}`, `localhost:${PORT}`]);
+  if (!allowedHosts.has(request.headers.host)) {
+    sendJson(response, 403, { error: 'This request host is not allowed.' });
+    return false;
+  }
+
+  const origin = request.headers.origin;
+  if (origin !== undefined) {
+    let parsedOrigin;
+    try {
+      parsedOrigin = new URL(origin);
+    } catch {
+      sendJson(response, 403, { error: 'This request origin is not allowed.' });
+      return false;
+    }
+    if (parsedOrigin.protocol !== 'http:' || parsedOrigin.origin !== origin ||
+        !allowedHosts.has(parsedOrigin.host)) {
+      sendJson(response, 403, { error: 'This request origin is not allowed.' });
+      return false;
+    }
+  }
+
+  const contentType = request.headers['content-type'] || '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    sendJson(response, 415, { error: 'Content-Type must be application/json.' });
+    return false;
+  }
+
+  const token = request.headers['x-csrf-token'] || '';
+  const tokenBuffer = Buffer.from(token);
+  const expectedTokenBuffer = Buffer.from(WRITE_TOKEN);
+  if (tokenBuffer.length !== expectedTokenBuffer.length ||
+      !timingSafeEqual(tokenBuffer, expectedTokenBuffer)) {
+    sendJson(response, 403, { error: 'A valid write token is required.' });
+    return false;
+  }
+
+  return true;
+}
+
 async function handleRequest(request, response) {
   const url = new URL(request.url, `http://${HOST}:${PORT}`);
+
+  if (request.method === 'POST' &&
+      (url.pathname === '/api/refresh' || url.pathname === '/api/trades') &&
+      !validateWriteRequest(request, response)) {
+    return;
+  }
 
   if (request.method === 'GET' && url.pathname === '/api/state') {
     const marketId = url.searchParams.get('marketId') || 'epex-de';
@@ -535,7 +586,7 @@ async function start() {
   syncAllMarkets().catch((error) => console.error(`Initial market-data sync failed: ${error.message}`));
   const syncTimer = setInterval(() => {
     syncAllMarkets().catch((error) => console.error(`Scheduled market-data sync failed: ${error.message}`));
-  }, PRICE_REFRESH_INTERVAL_MS);
+  }, SYNC_CHECK_INTERVAL_MS);
   syncTimer.unref();
 }
 

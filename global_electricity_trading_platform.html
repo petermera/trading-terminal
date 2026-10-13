@@ -244,11 +244,17 @@ let positions = [];
 let tradeLog = [];
 let dataStatus = null;
 let userSelectedMarket = false;
+let writeToken = null;
 
 async function apiRequest(path, options = {}) {
+  const headers = { ...options.headers };
+  if(options.method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+    headers['X-CSRF-Token'] = writeToken;
+  }
   const response = await fetch(path, {
     ...options,
-    headers: { 'Content-Type':'application/json', ...options.headers }
+    headers
   });
   const body = await response.json();
   if(!response.ok) throw new Error(body.error || `Request failed (${response.status}).`);
@@ -257,6 +263,7 @@ async function apiRequest(path, options = {}) {
 
 function applyServerState(data) {
   const previousSelection = selectedMarket.id;
+  writeToken = data.writeToken;
   markets = data.markets;
   positions = data.positions;
   tradeLog = data.tradeLog;

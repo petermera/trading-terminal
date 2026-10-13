@@ -19,6 +19,8 @@ let databaseFile;
 let port;
 let sourcePort;
 let appOutput = '';
+let writeToken;
+let requestedSourceEnd;
 
 async function availablePort() {
   const probe = net.createServer();
@@ -35,6 +37,7 @@ function createSourceServer() {
   return http.createServer((request, response) => {
     const url = new URL(request.url, `http://127.0.0.1:${sourcePort}`);
     const zone = url.searchParams.get('bzn');
+    requestedSourceEnd = url.searchParams.get('end');
     const zoneOffset = [...(zone || '')].reduce((total, character) => total + character.charCodeAt(0), 0) / 10;
     const end = Math.floor(Date.now() / 900_000) * 900_000;
     response.writeHead(200, { 'Content-Type': 'application/json' });
@@ -43,9 +46,10 @@ function createSourceServer() {
       unix_seconds: [
         (end - 1_800_000) / 1000,
         (end - 900_000) / 1000,
-        end / 1000
+        end / 1000,
+        (end + 86_400_000) / 1000
       ],
-      price: [80 + zoneOffset, 81 + zoneOffset, 82 + zoneOffset],
+      price: [80 + zoneOffset, 81 + zoneOffset, 82 + zoneOffset, 83 + zoneOffset],
       unit: 'EUR / MWh'
     }));
   });
@@ -72,10 +76,15 @@ async function waitFor(predicate, description) {
   throw new Error(`Timed out waiting for ${description}. ${diagnostic}`);
 }
 
-async function postJson(route, data) {
+async function postJson(route, data, headers = {}) {
   return fetch(`${baseUrl}${route}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: baseUrl,
+      'X-CSRF-Token': writeToken,
+      ...headers
+    },
     body: JSON.stringify(data)
   });
 }
@@ -98,6 +107,7 @@ async function startApp() {
       const response = await fetch(`${baseUrl}/api/state`);
       return response.ok;
     }, 'application server');
+    writeToken = (await fetch(`${baseUrl}/api/state`).then((response) => response.json())).writeToken;
   } catch (error) {
     throw new Error(`${error.message}\n${appOutput}`);
   }
@@ -130,7 +140,7 @@ test('ingests source-attributed market observations into SQLite and persists pap
   const firstState = await waitFor(async () => {
     const response = await fetch(`${baseUrl}/api/state?marketId=epex-de`);
     const data = await response.json();
-    return data.markets['epex-de'].price !== null && data.dataStatus.coverage.marketsWithPrices === 9
+    return data.markets['epex-de'].price !== null && data.dataStatus.coverage.marketsWithPrices === 8
       ? data
       : null;
   }, 'initial real-price source ingestion');
@@ -139,13 +149,16 @@ test('ingests source-attributed market observations into SQLite and persists pap
   assert.equal(firstState.markets['epex-de'].unit, 'EUR / MWh');
   assert.match(firstState.markets['epex-de'].licenseInfo, /CC BY 4\.0/);
   assert.equal(firstState.markets['epex-de'].history.length, 3);
+  assert.equal(firstState.markets['n2ex-uk'].freshness, 'not_covered');
+  assert.equal(firstState.dataStatus.zoneSync.length, 8);
+  assert.ok(Date.parse(requestedSourceEnd) >= Date.now() + 47 * 60 * 60_000);
   assert.equal(firstState.markets['ida-de'].price, null);
   assert.equal(firstState.markets['ida-de'].freshness, 'not_covered');
   assert.equal(firstState.positions.length, 0);
 
   const refreshResponse = await postJson('/api/refresh?marketId=epex-de', {});
   assert.equal(refreshResponse.status, 200);
-  assert.equal((await refreshResponse.json()).refresh.attemptedZones, 9);
+  assert.equal((await refreshResponse.json()).refresh.attemptedZones, 8);
 
   const book = await postJson('/api/trades', { side: 'SELL', quantity: 10, marketId: 'ida-de' });
   assert.equal(book.status, 409);
@@ -182,7 +195,9 @@ test('ingests source-attributed market observations into SQLite and persists pap
   assert.ok(Math.abs(Number(tradeResult.trade.px) - (firstState.markets['epex-de'].price + 0.1)) < 0.000001);
 
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM markets").get().count, 21);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM market_prices").get().count, 27);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM market_prices").get().count, 32);
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM market_prices WHERE interval_start > ?')
+    .get(new Date().toISOString()).count, 8);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM paper_trades").get().count, 1);
   database.close();
 
@@ -210,4 +225,40 @@ test('rejects malformed and out-of-range paper-trade requests', async () => {
     marketId: 'unknown'
   });
   assert.equal(invalidMarket.status, 400);
+});
+
+test('protects write routes with content type, origin, host, and token checks', async () => {
+  const nonJsonContentType = await fetch(`${baseUrl}/api/trades`, {
+    method: 'POST',
+    headers: { Origin: baseUrl, 'X-CSRF-Token': writeToken, 'Content-Type': 'text/plain' },
+    body: '{}'
+  });
+  assert.equal(nonJsonContentType.status, 415);
+
+  const wrongOrigin = await postJson('/api/trades', {}, { Origin: 'https://attacker.example' });
+  assert.equal(wrongOrigin.status, 403);
+
+  const missingToken = await postJson('/api/trades', {}, { 'X-CSRF-Token': '' });
+  assert.equal(missingToken.status, 403);
+
+  const wrongHost = await new Promise((resolve, reject) => {
+    const request = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/api/refresh',
+      method: 'POST',
+      headers: {
+        Host: `attacker.example:${port}`,
+        Origin: baseUrl,
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': writeToken
+      }
+    }, (response) => {
+      response.resume();
+      resolve(response);
+    });
+    request.on('error', reject);
+    request.end('{}');
+  });
+  assert.equal(wrongHost.statusCode, 403);
 });
