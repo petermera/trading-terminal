@@ -1,0 +1,14 @@
+{
+  "name": "volt-electricity-terminal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "European day-ahead electricity data terminal with a SQLite database and paper-trading API",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
