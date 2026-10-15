@@ -1,5 +1,56 @@
 
-<h2 class="sr-only">Global Electricity Markets Interactive Trading Platform — live simulated prices across EPEX, Nord Pool, OMIE, and balancing markets</h2>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="European day-ahead electricity prices with sourced market data and paper trading.">
+<title>VOLT Terminal — European Market Data</title>
+<style>
+:root {
+  color-scheme: light;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f6f7f8;
+  --color-border-tertiary: #e1e4e8;
+  --color-border-secondary: #c6cbd1;
+  --color-text-primary: #202428;
+  --color-text-secondary: #646d76;
+  --color-text-tertiary: #858d95;
+  --border-radius-md: 6px;
+}
+body {
+  margin: 0;
+  padding: 16px;
+  background: #f0f2f4;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+}
+.platform { max-width: 1440px; margin: 0 auto; }
+#mainChart { display: block; width: 100%; height: 100%; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.connection-error { margin: 0 0 10px; padding: 8px 12px; border: 1px solid #f09595; border-radius: var(--border-radius-md); background: #fcebeb; color: #a32d2d; font-size: 12px; }
+.data-meta { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin: -2px 0 10px; padding: 8px 12px; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-secondary); font-size: 11px; }
+.data-meta a { color: #185fa5; }
+.refresh-btn { border: 1px solid var(--color-border-secondary); background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 4px 8px; color: var(--color-text-primary); font: inherit; cursor: pointer; }
+.market-unavailable { display: inline-block; margin-top: 8px; color: var(--color-text-tertiary); font-size: 10px; }
+@media (max-width: 900px) {
+  .main-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bottom-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  body { padding: 8px; }
+  .topbar { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .topbar-left { flex-wrap: wrap; gap: 8px; }
+  .main-grid, .bottom-grid { grid-template-columns: 1fr; }
+  .tabs { flex-wrap: wrap; }
+  .tab { padding: 6px 9px; }
+  .ticker-bar { overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+<h2 class="sr-only">European electricity day-ahead market data and paper-trading dashboard</h2>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: var(--font-mono); }
@@ -78,13 +129,18 @@ body { font-family: var(--font-mono); }
   <div class="topbar">
     <div class="topbar-left">
       <span class="logo">⚡ VOLT TERMINAL</span>
-      <span><span class="status-dot"></span><span class="status-txt">LIVE SIM</span></span>
+      <span id="server-status"><span class="status-dot"></span><span class="status-txt">CONNECTING</span></span>
       <span class="clock" id="clk">--:--:-- UTC</span>
     </div>
     <div style="display:flex;gap:16px;align-items:center;">
       <span style="font-size:11px;font-family:var(--font-mono);color:var(--color-text-secondary);">Total P&L: <span id="total-pnl" style="font-weight:500;color:#3B6D11;">+€0</span></span>
       <span style="font-size:11px;font-family:var(--font-mono);color:var(--color-text-secondary);">Open positions: <span id="open-pos" style="font-weight:500;color:var(--color-text-primary);">3</span></span>
     </div>
+  </div>
+  <div id="connection-error" class="connection-error" role="alert" hidden></div>
+  <div class="data-meta">
+    <span id="data-provenance">Connecting to the real-market-data database…</span>
+    <span>Paper trading only · no live orders · <button class="refresh-btn" onclick="refreshMarketData()">Sync source now</button></span>
   </div>
 
   <div class="ticker-bar" id="ticker-bar"></div>
@@ -100,17 +156,17 @@ body { font-family: var(--font-mono); }
 
   <div class="chart-panel">
     <div class="chart-row">
-      <span class="chart-title" id="chart-title">EPEX DE — Day-Ahead Price Curve (€/MWh)</span>
-      <span class="chart-meta" id="chart-meta">Delivery: Tomorrow | H1–H24</span>
+      <span class="chart-title" id="chart-title">Day-ahead market prices</span>
+      <span class="chart-meta" id="chart-meta">Loading published source intervals…</span>
     </div>
     <div style="position:relative;width:100%;height:200px;">
-      <canvas id="mainChart" role="img" aria-label="Electricity day-ahead price curve for selected market, hourly €/MWh values">Price data loading...</canvas>
+      <canvas id="mainChart" role="img" aria-label="Published electricity market prices for selected bidding zone">Price data loading...</canvas>
     </div>
   </div>
 
   <div class="bottom-grid">
     <div class="panel">
-      <div class="panel-title">ORDER BOOK — <span id="ob-market">EPEX DE</span></div>
+      <div class="panel-title">PAPER-SIMULATED BOOK — <span id="ob-market">EPEX DE/LU</span></div>
       <div style="display:grid;grid-template-columns:1fr 0.8fr 1fr;gap:4px;margin-bottom:4px;">
         <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);">VOL (MWh)</span>
         <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);text-align:center;">PRICE</span>
@@ -120,10 +176,11 @@ body { font-family: var(--font-mono); }
       <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
         <div class="kpi-row">
           <div class="kpi"><div class="kpi-label">EXECUTE QTY</div><input class="trade-input" type="number" id="trade-qty" value="10" min="1" max="500" style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
-          <div class="kpi"><div class="kpi-label">LIMIT PRICE</div><input class="trade-input" type="number" id="trade-px" value="0" style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
+          <div class="kpi"><div class="kpi-label">REAL SOURCE PRICE (EUR/MWh)</div><input class="trade-input" type="number" id="trade-px" value="" readonly style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
         </div>
         <button class="trade-btn buy-btn" onclick="executeTrade('BUY')">BUY (LONG)</button>
         <button class="trade-btn sell-btn" onclick="executeTrade('SELL')">SELL (SHORT)</button>
+        <div id="trade-status" role="status" aria-live="polite" style="font-size:11px;color:var(--color-text-secondary);"></div>
       </div>
     </div>
 
@@ -142,7 +199,7 @@ body { font-family: var(--font-mono); }
       <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
         <div class="panel-title" style="margin-bottom:6px;">SESSION KPIs</div>
         <div class="kpi-row">
-          <div class="kpi"><div class="kpi-label">VWAP TODAY</div><div class="kpi-val" id="kpi-vwap">—</div></div>
+          <div class="kpi"><div class="kpi-label">SOURCE AVG TODAY</div><div class="kpi-val" id="kpi-vwap">—</div></div>
           <div class="kpi"><div class="kpi-label">SESSION HIGH</div><div class="kpi-val" id="kpi-high">—</div></div>
         </div>
         <div class="kpi-row">
@@ -154,34 +211,19 @@ body { font-family: var(--font-mono); }
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const DA_MARKETS = [
-  { id:'epex-de', name:'EPEX DE', region:'DACH', base:85, vol:18 },
-  { id:'epex-fr', name:'EPEX FR', region:'W.EU', base:82, vol:15 },
-  { id:'epex-at', name:'EPEX AT', region:'DACH', base:87, vol:17 },
-  { id:'epex-be', name:'EPEX BE', region:'W.EU', base:83, vol:14 },
-  { id:'omie-es', name:'OMIE ES', region:'Iberia', base:78, vol:12 },
-  { id:'omie-pt', name:'OMIE PT', region:'Iberia', base:79, vol:12 },
-  { id:'np-dk1', name:'NP DK1', region:'Nordic', base:72, vol:20 },
-  { id:'np-no1', name:'NP NO1', region:'Nordic', base:65, vol:22 },
-  { id:'n2ex-uk', name:'N2EX UK', region:'UK', base:91, vol:16 },
+  { id:'epex-de' }, { id:'epex-fr' }, { id:'epex-at' },
+  { id:'epex-be' }, { id:'omie-es' }, { id:'omie-pt' },
+  { id:'np-dk1' }, { id:'np-no1' }, { id:'n2ex-uk' },
 ];
 const IDA_MARKETS = [
-  { id:'ida-de', name:'IDA DE', region:'DACH', base:84, vol:22 },
-  { id:'ida-fr', name:'IDA FR', region:'W.EU', base:81, vol:19 },
-  { id:'ida-es', name:'IDA ES', region:'Iberia', base:77, vol:15 },
-  { id:'ida-it', name:'GME IT', region:'Italy', base:92, vol:14 },
-  { id:'ida-pl', name:'TGE PL', region:'CEE', base:88, vol:18 },
-  { id:'ida-nl', name:'EPEX NL', region:'W.EU', base:83, vol:14 },
+  { id:'ida-de' }, { id:'ida-fr' }, { id:'ida-es' },
+  { id:'ida-it' }, { id:'ida-pl' }, { id:'ida-nl' },
 ];
 const BAL_MARKETS = [
-  { id:'afrr-de', name:'aFRR DE', region:'DACH', base:95, vol:35, product:'aFRR cap' },
-  { id:'mfrr-de', name:'mFRR DE', region:'DACH', base:120, vol:45, product:'mFRR cap' },
-  { id:'fcr-eu', name:'FCR EU', region:'EU', base:28, vol:12, product:'FCR' },
-  { id:'afrr-es', name:'aFRR ES', region:'Iberia', base:88, vol:30, product:'aFRR' },
-  { id:'rr-eu', name:'RR EU', region:'EU', base:75, vol:18, product:'RR' },
-  { id:'imbalance-de', name:'Imbal. DE', region:'DACH', base:110, vol:60, product:'Imbalance' },
+  { id:'afrr-de' }, { id:'mfrr-de' }, { id:'fcr-eu' },
+  { id:'afrr-es' }, { id:'rr-eu' }, { id:'imbalance-de' },
 ];
 
 const SPREAD_PAIRS = [
@@ -196,26 +238,114 @@ const SPREAD_PAIRS = [
 let currentTab = 'da';
 let selectedMarket = DA_MARKETS[0];
 let markets = {};
-let mainChartInst = null;
 let priceHistory = {};
-let sessionHigh = -Infinity, sessionLow = Infinity, sessionVol = 0, sessionVwapSum = 0, sessionVwapVol = 0;
-let positions = [
-  { market:'EPEX DE', side:'BUY', qty:50, entryPx:84.20, id:'p1' },
-  { market:'OMIE ES', side:'SELL', qty:30, entryPx:77.50, id:'p2' },
-  { market:'aFRR DE', side:'BUY', qty:20, entryPx:93.00, id:'p3' },
-];
+let sessionHigh = null, sessionLow = null, sessionAverage = null, sessionVol = 0;
+let positions = [];
 let tradeLog = [];
+let dataStatus = null;
+let userSelectedMarket = false;
+let writeToken = null;
 
-function rnd(base, vol) { return base + (Math.random()-0.5)*vol; }
-
-function initMarkets(list) {
-  list.forEach(m => {
-    if(!markets[m.id]) {
-      markets[m.id] = { ...m, price: rnd(m.base, m.vol), prev: 0, change: 0 };
-      markets[m.id].prev = markets[m.id].price;
-      priceHistory[m.id] = Array.from({length:24},(_,i)=>rnd(m.base + Math.sin(i/3)*8, m.vol*0.6));
-    }
+async function apiRequest(path, options = {}) {
+  const headers = { ...options.headers };
+  if(options.method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+    headers['X-CSRF-Token'] = writeToken;
+  }
+  const response = await fetch(path, {
+    ...options,
+    headers
   });
+  const body = await response.json();
+  if(!response.ok) throw new Error(body.error || `Request failed (${response.status}).`);
+  return body;
+}
+
+function applyServerState(data) {
+  const previousSelection = selectedMarket.id;
+  writeToken = data.writeToken;
+  markets = data.markets;
+  positions = data.positions;
+  tradeLog = data.tradeLog;
+  sessionHigh = data.session.high;
+  sessionLow = data.session.low;
+  sessionAverage = data.session.average;
+  sessionVol = data.session.volume;
+  dataStatus = data.dataStatus;
+  priceHistory = Object.fromEntries(Object.entries(markets).map(([id,market])=>[id,market.history]));
+  selectedMarket = markets[selectedMarket.id] || markets[DA_MARKETS[0].id];
+  if(!userSelectedMarket && selectedMarket.freshness !== 'fresh') {
+    const firstFresh = DA_MARKETS.map(market=>markets[market.id]).find(market=>market?.freshness === 'fresh');
+    if(firstFresh) selectedMarket = firstFresh;
+  }
+  return selectedMarket.id !== previousSelection;
+}
+
+function showServerStatus(connected, message = '') {
+  const status = document.getElementById('server-status');
+  const quote = markets[selectedMarket.id];
+  const fresh = connected && quote?.freshness === 'fresh';
+  const stale = connected && quote?.freshness === 'stale';
+  const label = !connected ? 'SERVER OFFLINE' : fresh ? 'REAL SOURCE PRICE' :
+    stale ? 'REAL PRICE STALE' : quote?.freshness === 'not_covered' ? 'PRODUCT NOT COVERED' : 'PRICE UNAVAILABLE';
+  const color = fresh ? '#3B6D11' : '#A32D2D';
+  status.innerHTML = `<span class="status-dot" style="background:${color}"></span><span class="status-txt" style="color:${color}">${label}</span>`;
+  const error = document.getElementById('connection-error');
+  const zoneStatus = dataStatus?.zoneSync?.find(zone=>zone.biddingZone===quote?.biddingZone);
+  const feedError = zoneStatus?.lastError ? ` Source status: ${zoneStatus.lastError}` : '';
+  const dataError = stale
+    ? `This is an old source observation; paper trading is blocked.${feedError}`
+    : quote?.freshness === 'unavailable'
+      ? `No real price has been imported for this bidding zone. No simulated value will be substituted.${feedError}`
+      : '';
+  error.hidden = connected && !dataError;
+  error.textContent = !connected ? message : dataError;
+  const provenance = document.getElementById('data-provenance');
+  if(!connected) {
+    provenance.textContent = 'Real market data server is offline.';
+  } else if(!quote?.biddingZone) {
+    provenance.textContent = 'No real feed for this selected product. Other products are not substituted for it.';
+  } else if(!quote.price) {
+    provenance.textContent = `No price observations have been recorded for ${quote.biddingZone} yet.`;
+  } else {
+    const interval = quote.intervalStart ? new Date(quote.intervalStart).toISOString() : 'unknown';
+    const fetchedAt = quote.fetchedAt ? new Date(quote.fetchedAt).toISOString() : 'unknown';
+    const license = quote.licenseInfo || 'source attribution unavailable';
+    provenance.innerHTML = `${quote.freshness === 'fresh' ? 'REAL SOURCE OBSERVATION' : 'STALE SOURCE OBSERVATION'} · ${quote.biddingZone} · ${escapeHtml(quote.unit)} · interval ${escapeHtml(interval)} · imported ${escapeHtml(fetchedAt)} · ${escapeHtml(license)} · <a href="${escapeHtml(quote.sourceUrl || dataStatus.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(dataStatus.source)}</a>`;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[character]));
+}
+
+async function refreshState() {
+  try {
+    const payload = await apiRequest(`/api/state?marketId=${encodeURIComponent(selectedMarket.id)}`);
+    if(applyServerState(payload)) return await refreshState();
+    showServerStatus(true);
+    renderAll();
+  } catch(error) {
+    showServerStatus(false, `Server connection failed: ${error.message} Start the app with npm start.`);
+  }
+}
+
+async function refreshMarketData() {
+  const button = document.querySelector('.refresh-btn');
+  button.disabled = true;
+  button.textContent = 'Syncing…';
+  try {
+    await apiRequest(`/api/refresh?marketId=${encodeURIComponent(selectedMarket.id)}`, { method:'POST' });
+  } catch(error) {
+    document.getElementById('connection-error').textContent = `Price source sync failed: ${error.message}. Existing database observations have not been replaced with simulated values.`;
+    document.getElementById('connection-error').hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Sync source now';
+    await refreshState();
+  }
 }
 
 function getCurrentList() {
@@ -225,24 +355,8 @@ function getCurrentList() {
   return DA_MARKETS;
 }
 
-function tickPrices() {
-  const all = [...DA_MARKETS,...IDA_MARKETS,...BAL_MARKETS];
-  all.forEach(m => {
-    if(!markets[m.id]) return;
-    const mk = markets[m.id];
-    const drift = (m.base - mk.price)*0.03;
-    const noise = (Math.random()-0.48)*m.vol*0.12;
-    mk.prev = mk.price;
-    mk.price = Math.max(10, mk.price + drift + noise);
-    mk.change = mk.price - mk.prev;
-    if(priceHistory[m.id]) priceHistory[m.id].push(mk.price);
-  });
-  if(markets[selectedMarket.id]) {
-    const p = markets[selectedMarket.id].price;
-    if(p > sessionHigh) sessionHigh = p;
-    if(p < sessionLow) sessionLow = p;
-    sessionVwapSum += p; sessionVwapVol++;
-  }
+function hasFreshPrice(market) {
+  return Boolean(market && Number.isFinite(market.price) && market.freshness === 'fresh');
 }
 
 function renderGrid() {
@@ -253,35 +367,48 @@ function renderGrid() {
   list.forEach(m => {
     const mk = markets[m.id];
     if(!mk) return;
-    const isUp = mk.change >= 0;
-    const pct = ((mk.price - m.base)/m.base*100).toFixed(1);
-    const sparkId = 'spark-'+m.id;
+    const hasPrice = Number.isFinite(mk.price);
+    const isFresh = hasPrice && mk.freshness === 'fresh';
+    const isUp = hasFreshPrice(mk) && (mk.change ?? 0) >= 0;
+    const pct = isFresh && mk.prev ? mk.change / mk.prev * 100 : null;
     const card = document.createElement('div');
     card.className = 'market-card' + (selectedMarket.id===m.id?' selected':'');
     card.onclick = () => selectMarket(m);
-    const hist = (priceHistory[m.id]||[]).slice(-10);
-    card.innerHTML = `<div class="mc-header"><div><div class="mc-name">${m.name}</div><div class="mc-product">${m.region} ${m.product||'DA'}</div></div><div style="font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:4px;background:${isUp?'#EAF3DE':'#FCEBEB'};color:${isUp?'#3B6D11':'#A32D2D'}">${isUp?'+':''}${pct}%</div></div><div class="mc-price">${mk.price.toFixed(2)}</div><div class="mc-change ${isUp?'up':'down'}">${isUp?'▲':'▼'} ${Math.abs(mk.change).toFixed(2)} €/MWh</div><svg class="spark" viewBox="0 0 80 28"><polyline points="${hist.map((v,i)=>`${i*(80/(hist.length-1))},${28-(v-Math.min(...hist))/(Math.max(...hist)-Math.min(...hist)+0.1)*24}`).join(' ')}" fill="none" stroke="${isUp?'#639922':'#A32D2D'}" stroke-width="1.5"/></svg>`;
+    const history = (priceHistory[m.id] || []).slice(-10).map(point => point.price);
+    const spark = history.length > 1
+      ? `<svg class="spark" viewBox="0 0 80 28" aria-label="Historical source prices"><polyline points="${history.map((value,index)=>`${index*(80/(history.length-1))},${28-(value-Math.min(...history))/(Math.max(...history)-Math.min(...history)+0.1)*24}`).join(' ')}" fill="none" stroke="${isUp?'#639922':'#A32D2D'}" stroke-width="1.5"/></svg>`
+      : '<span class="market-unavailable">No source history</span>';
+    const changeBadge = pct === null ? (mk.freshness==='stale'?'STALE':'—') : `${pct>0?'+':''}${pct.toFixed(2)}%`;
+    const price = hasPrice ? `€${mk.price.toFixed(2)}` : '—';
+    const zoneStatus = dataStatus?.zoneSync?.find(zone=>zone.biddingZone===mk.biddingZone);
+    const movement = !hasPrice
+      ? (!mk.biddingZone ? 'Product not covered by source' :
+        zoneStatus?.lastError ? `Feed unavailable · ${escapeHtml(zoneStatus.lastError)}` : 'Waiting for feed sync')
+      : !isFresh ? 'Stale source observation' : `${isUp?'▲':'▼'} ${Math.abs(mk.change).toFixed(2)} €/MWh`;
+    card.innerHTML = `<div class="mc-header"><div><div class="mc-name">${escapeHtml(mk.name)}</div><div class="mc-product">${escapeHtml(mk.region)} · ${escapeHtml(mk.product)}</div></div><div style="font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:4px;background:${!isFresh?'var(--color-background-secondary)':isUp?'#EAF3DE':'#FCEBEB'};color:${!isFresh?'var(--color-text-secondary)':isUp?'#3B6D11':'#A32D2D'}">${changeBadge}</div></div><div class="mc-price">${price}</div><div class="mc-change ${!isFresh?'neutral':isUp?'up':'down'}">${movement}</div>${spark}`;
     grid.appendChild(card);
   });
 }
 
 function selectMarket(m) {
-  selectedMarket = markets[m.id] ? markets[m.id] : m;
-  selectedMarket = { ...m, ...markets[m.id] };
-  sessionHigh=-Infinity; sessionLow=Infinity; sessionVwapSum=0; sessionVwapVol=0;
-  updateChart();
-  document.getElementById('ob-market').textContent = m.name;
-  document.getElementById('chart-title').textContent = `${m.name} — ${currentTab==='bal'?(m.product||'Balancing'):currentTab==='ida'?'Intraday':'Day-Ahead'} Price Curve (€/MWh)`;
+  userSelectedMarket = true;
+  selectedMarket = markets[m.id] || m;
+  document.getElementById('ob-market').textContent = selectedMarket.name || m.id;
+  document.getElementById('chart-title').textContent = `${selectedMarket.name || m.id} — ${selectedMarket.product || 'market'} prices (EUR/MWh)`;
   renderGrid();
+  void refreshState();
 }
 
 function renderOrderBook() {
   const mk = markets[selectedMarket.id];
-  if(!mk) return;
-  const mid = mk.price;
   const ob = document.getElementById('order-book');
-  if(!ob) return;
-  const spread = mk.vol*0.02;
+  if(!hasFreshPrice(mk)) {
+    ob.innerHTML = '<div class="market-unavailable">No real published price; no executable paper quote.</div>';
+    document.getElementById('trade-px').value = '';
+    return;
+  }
+  const mid = mk.price;
+  const spread = Math.max(0.01, Math.abs(mk.change || mid * 0.01) * 0.2);
   let html = '';
   for(let i=4;i>=1;i--) {
     const px = mid + spread*i + (Math.random()-0.5)*0.3;
@@ -297,8 +424,7 @@ function renderOrderBook() {
     html += `<div class="ob-row"><div class="ob-vol" style="position:relative;z-index:1;color:#3B6D11;">${vol}</div><div class="ob-price-bid" style="position:relative;z-index:1;">${px.toFixed(2)}</div><div class="ob-vol" style="position:relative;z-index:1;"></div><div class="ob-depth-bid" style="width:${depth}%"></div></div>`;
   }
   ob.innerHTML = html;
-  const mk2 = markets[selectedMarket.id];
-  if(mk2) document.getElementById('trade-px').value = mk2.price.toFixed(2);
+  document.getElementById('trade-px').value = mk.price.toFixed(2);
 }
 
 function renderPositions() {
@@ -307,14 +433,19 @@ function renderPositions() {
   let totalPnl = 0;
   let html = '';
   positions.forEach(p => {
-    const mk = Object.values(markets).find(m=>m.name===p.market);
-    const curPx = mk ? mk.price : p.entryPx;
-    const pnl = (p.side==='BUY'?1:-1)*(curPx-p.entryPx)*p.qty;
-    totalPnl += pnl;
-    html += `<div class="pos-row"><div><div class="pos-market">${p.market}</div><div class="pos-vol" style="font-size:10px;">${p.side} ${p.qty}MWh @ ${p.entryPx.toFixed(2)}</div></div><div class="pos-pnl ${pnl>=0?'up':'down'}">${pnl>=0?'+':''}€${pnl.toFixed(0)}</div></div>`;
+    const mk = markets[p.marketId];
+    const pnl = hasFreshPrice(mk)
+      ? (p.side==='BUY'?1:-1)*(mk.price-p.entryPx)*p.qty
+      : null;
+    if(pnl!==null) totalPnl += pnl;
+    const pnlText = pnl===null ? 'NO CURRENT MARK' : `${pnl>=0?'+€':'-€'}${Math.abs(pnl).toFixed(0)}`;
+    html += `<div class="pos-row"><div><div class="pos-market">${escapeHtml(mk?.name || p.marketId)}</div><div class="pos-vol" style="font-size:10px;">${p.side} ${p.qty}MWh @ ${Number(p.entryPx).toFixed(2)}</div></div><div class="pos-pnl ${pnl===null?'neutral':pnl>=0?'up':'down'}">${pnlText}</div></div>`;
   });
   el.innerHTML = html;
-  document.getElementById('total-pnl').textContent = (totalPnl>=0?'+':'')+'€'+totalPnl.toFixed(0);
+  const unavailableMarks = positions.some(p=>!hasFreshPrice(markets[p.marketId]));
+  document.getElementById('total-pnl').textContent = unavailableMarks
+    ? 'PARTIAL'
+    : (totalPnl>=0?'+€':'-€')+Math.abs(totalPnl).toFixed(0);
   document.getElementById('total-pnl').className = totalPnl>=0?'up':'down';
   document.getElementById('open-pos').textContent = positions.length;
 }
@@ -324,9 +455,9 @@ function renderSpreads() {
   if(!el) return;
   let html = '';
   SPREAD_PAIRS.forEach(sp => {
-    const a = Object.values(markets).find(m=>m.id===sp.a);
-    const b = Object.values(markets).find(m=>m.id===sp.b);
-    if(!a||!b) return;
+    const a = markets[sp.a];
+    const b = markets[sp.b];
+    if(!hasFreshPrice(a)||!hasFreshPrice(b)) return;
     const diff = a.price - b.price;
     const isPos = diff >= 0;
     html += `<div class="spread-row"><span class="spread-name">${sp.name}</span><span class="spread-val ${isPos?'up':'down'}">${isPos?'+':''}${diff.toFixed(2)} €/MWh</span></div>`;
@@ -335,22 +466,21 @@ function renderSpreads() {
 }
 
 function renderKPIs() {
-  const vwap = sessionVwapVol > 0 ? (sessionVwapSum/sessionVwapVol) : 0;
-  document.getElementById('kpi-vwap').textContent = vwap>0?vwap.toFixed(2)+'€':'—';
-  document.getElementById('kpi-high').textContent = sessionHigh>-Infinity?sessionHigh.toFixed(2)+'€':'—';
-  document.getElementById('kpi-low').textContent = sessionLow<Infinity?sessionLow.toFixed(2)+'€':'—';
+  document.getElementById('kpi-vwap').textContent = Number.isFinite(sessionAverage)?sessionAverage.toFixed(2)+'€':'—';
+  document.getElementById('kpi-high').textContent = Number.isFinite(sessionHigh)?sessionHigh.toFixed(2)+'€':'—';
+  document.getElementById('kpi-low').textContent = Number.isFinite(sessionLow)?sessionLow.toFixed(2)+'€':'—';
   document.getElementById('kpi-vol').textContent = sessionVol>0?sessionVol+'MWh':'—';
 }
 
 function renderTicker() {
   const bar = document.getElementById('ticker-bar');
   if(!bar) return;
-  const show = [DA_MARKETS[0],DA_MARKETS[4],DA_MARKETS[8],IDA_MARKETS[0],BAL_MARKETS[0],BAL_MARKETS[2]];
+  const show = DA_MARKETS;
   bar.innerHTML = show.map(m=>{
     const mk = markets[m.id];
-    if(!mk) return '';
+    if(!hasFreshPrice(mk)) return '';
     const isUp = mk.change>=0;
-    return `<div class="tick-item"><span class="tick-name">${m.name}</span><span class="tick-price">${mk.price.toFixed(2)}</span><span class="${isUp?'up':'down'}" style="font-size:10px;">${isUp?'▲':'▼'}${Math.abs(mk.change).toFixed(2)}</span></div>`;
+    return `<div class="tick-item"><span class="tick-name">${escapeHtml(mk.name)}</span><span class="tick-price">${mk.price.toFixed(2)}</span><span class="${isUp?'up':'down'}" style="font-size:10px;">${isUp?'▲':'▼'}${Math.abs(mk.change).toFixed(2)}</span></div>`;
   }).join('');
 }
 
@@ -358,65 +488,114 @@ function renderTradeLog() {
   const el = document.getElementById('trade-log');
   if(!el) return;
   el.innerHTML = tradeLog.slice(-8).reverse().map(t=>
-    `<div class="log-row"><span class="log-time">${t.time}</span><span class="log-side-${t.side.toLowerCase()}">${t.side}</span><span>${t.qty}MWh ${t.market} @ ${t.px}</span><span class="${t.pnl>=0?'up':'down'}">${t.pnl>=0?'+':''}€${t.pnl.toFixed(0)}</span></div>`
+    `<div class="log-row"><span class="log-time">${t.time}</span><span class="log-side-${t.side.toLowerCase()}">${t.side}</span><span>${t.qty}MWh ${escapeHtml(t.market)} @ ${Number(t.px).toFixed(2)}</span><span class="${t.pnl===null?'neutral':t.pnl>=0?'up':'down'}">${t.pnl===null?'—':`${t.pnl>=0?'+€':'-€'}${Math.abs(t.pnl).toFixed(0)}`}</span></div>`
   ).join('');
 }
 
-function executeTrade(side) {
-  const qty = parseInt(document.getElementById('trade-qty').value)||10;
-  const px = parseFloat(document.getElementById('trade-px').value)||selectedMarket.price||85;
-  const now = new Date();
-  const timeStr = now.getUTCHours().toString().padStart(2,'0')+':'+now.getUTCMinutes().toString().padStart(2,'0')+':'+now.getUTCSeconds().toString().padStart(2,'0');
-  const curPx = markets[selectedMarket.id]?markets[selectedMarket.id].price:px;
-  const slippage = (Math.random()*0.3+0.05)*(side==='BUY'?1:-1);
-  const fillPx = curPx + slippage;
-  const pnl = (side==='BUY'?1:-1)*(curPx-fillPx)*qty;
-  tradeLog.push({ time:timeStr, side, qty, market:selectedMarket.name||'EPEX DE', px:fillPx.toFixed(2), pnl });
-  sessionVol += qty;
-  positions.push({ market:selectedMarket.name||'EPEX DE', side, qty, entryPx:fillPx, id:'t'+Date.now() });
-  renderTradeLog();
-  renderPositions();
-  renderKPIs();
+async function executeTrade(side) {
+  const qtyInput = document.getElementById('trade-qty');
+  const qty = Number(qtyInput.value);
+  const status = document.getElementById('trade-status');
+  if(!Number.isInteger(qty) || qty < 1 || qty > 500) {
+    status.textContent = 'Enter a whole quantity between 1 and 500 MWh.';
+    qtyInput.focus();
+    return;
+  }
+  if(!markets[selectedMarket.id]?.biddingZone || markets[selectedMarket.id].freshness !== 'fresh') {
+    status.textContent = 'Paper trade blocked: this product has no fresh, real source price.';
+    return;
+  }
+  status.textContent = 'Submitting paper trade…';
+  try {
+    const result = await apiRequest('/api/trades', {
+      method:'POST',
+      body:JSON.stringify({ side, quantity:qty, marketId:selectedMarket.id })
+    });
+    applyServerState(result);
+    status.textContent = `${side} ${qty} MWh paper fill recorded at €${result.trade.px}/MWh using the real reference price.`;
+    renderAll();
+  } catch(error) {
+    status.textContent = `Trade not submitted: ${error.message}`;
+  }
 }
 
 function updateChart() {
   const mk = markets[selectedMarket.id];
-  if(!mk||!priceHistory[selectedMarket.id]) return;
-  const hist = priceHistory[selectedMarket.id].slice(-24);
-  const labels = Array.from({length:hist.length},(_,i)=>i<10?`H0${i}`:`H${i}`);
-  if(!mainChartInst) return;
-  mainChartInst.data.labels = labels;
-  mainChartInst.data.datasets[0].data = hist.map(v=>parseFloat(v.toFixed(2)));
-  const avg = hist.reduce((a,b)=>a+b,0)/hist.length;
-  mainChartInst.data.datasets[1].data = hist.map(()=>parseFloat(avg.toFixed(2)));
-  mainChartInst.update('none');
+  const history = priceHistory[selectedMarket.id] || [];
+  document.getElementById('chart-meta').textContent = mk?.intervalStart
+    ? `Published intervals in UTC · latest ${new Date(mk.intervalStart).toISOString()}`
+    : mk?.biddingZone ? 'Waiting for published market observations' : 'No connected feed for this product';
+  drawChart(history.map(point=>point.price),history.map(point=>new Date(point.timestamp).toISOString().slice(11,16)));
 }
 
-function initChart() {
-  const ctx = document.getElementById('mainChart');
+function drawChart(values, labels = []) {
+  const canvas = document.getElementById('mainChart');
+  if(!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * ratio);
+  canvas.height = Math.round(rect.height * ratio);
+  const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const mk = markets[selectedMarket.id];
-  const hist = mk?(priceHistory[selectedMarket.id]||[]).slice(-24):Array.from({length:24},()=>85);
-  const labels = Array.from({length:hist.length},(_,i)=>i<10?`H0${i}`:`H${i}`);
-  const avg = hist.reduce((a,b)=>a+b,0)/hist.length;
-  mainChartInst = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels,
-      datasets:[
-        { label:'Price (€/MWh)', data:hist.map(v=>parseFloat(v.toFixed(2))), borderColor:'#185FA5', backgroundColor:'rgba(55,138,221,0.08)', borderWidth:1.5, pointRadius:1.5, pointBackgroundColor:'#185FA5', tension:0.35, fill:true },
-        { label:'Avg', data:hist.map(()=>parseFloat(avg.toFixed(2))), borderColor:'#BA7517', borderWidth:1, borderDash:[4,4], pointRadius:0, tension:0 }
-      ]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false, animation:false,
-      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(c)=>`${c.dataset.label}: €${c.raw.toFixed(2)}/MWh` } } },
-      scales:{
-        x:{ grid:{color:'rgba(128,128,128,0.08)'}, ticks:{font:{size:10,family:'monospace'},color:'#888',maxTicksLimit:12} },
-        y:{ grid:{color:'rgba(128,128,128,0.08)'}, ticks:{font:{size:10,family:'monospace'},color:'#888',callback:v=>`€${v}`} }
-      }
-    }
-  });
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+
+  const width = rect.width, height = rect.height;
+  ctx.clearRect(0,0,width,height);
+  if(values.length===0) {
+    ctx.fillStyle = '#858d95';
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No imported source observations for this product.',width/2,height/2);
+    return;
+  }
+  const left = 44, right = 12, top = 10, bottom = 24;
+  const plotWidth = width - left - right, plotHeight = height - top - bottom;
+  const average = values.reduce((sum,value)=>sum+value,0)/values.length;
+  const minimum = Math.floor((Math.min(...values)-5)/10)*10;
+  const maximum = Math.ceil((Math.max(...values)+5)/10)*10;
+  const range = Math.max(10,maximum-minimum);
+  const x = i => left + (values.length===1 ? plotWidth/2 : i*plotWidth/(values.length-1));
+  const y = value => top + (maximum-value)*plotHeight/range;
+
+  ctx.clearRect(0,0,width,height);
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.textBaseline = 'middle';
+  for(let step=0;step<=4;step++) {
+    const value = minimum + range*step/4;
+    const lineY = y(value);
+    ctx.strokeStyle = 'rgba(128,128,128,0.16)';
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(left,lineY); ctx.lineTo(width-right,lineY); ctx.stroke();
+    ctx.fillStyle = '#858d95';
+    ctx.textAlign = 'right';
+    ctx.fillText(`€${value.toFixed(0)}`,left-7,lineY);
+  }
+
+  ctx.strokeStyle = '#BA7517';
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(left,y(average)); ctx.lineTo(width-right,y(average)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  values.forEach((value,index)=>index===0?ctx.moveTo(x(index),y(value)):ctx.lineTo(x(index),y(value)));
+  ctx.lineTo(x(values.length-1),top+plotHeight);
+  ctx.lineTo(x(0),top+plotHeight);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(55,138,221,0.08)';
+  ctx.fill();
+
+  ctx.beginPath();
+  values.forEach((value,index)=>index===0?ctx.moveTo(x(index),y(value)):ctx.lineTo(x(index),y(value)));
+  ctx.strokeStyle = '#185FA5';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#858d95';
+  ctx.textAlign = 'center';
+  for(let index=0;index<values.length;index+=Math.ceil(values.length/8)) {
+    ctx.fillText(labels[index] || `#${index+1}`,x(index),height-bottom/2);
+  }
 }
 
 function setTab(tab, el) {
@@ -424,11 +603,10 @@ function setTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   const list = getCurrentList();
-  initMarkets(list);
   selectedMarket = list[0];
   selectMarket(list[0]);
   if(tab==='spread') {
-    document.getElementById('chart-title').textContent = 'Cross-Market Spread Analysis (€/MWh)';
+    document.getElementById('chart-title').textContent = 'Cross-market spread analysis (real source prices only)';
   }
   renderGrid();
 }
@@ -440,8 +618,7 @@ function updateClock() {
   if(el) el.textContent = s;
 }
 
-function fullRender() {
-  tickPrices();
+function renderAll() {
   renderGrid();
   renderOrderBook();
   renderPositions();
@@ -452,14 +629,10 @@ function fullRender() {
   updateClock();
 }
 
-initMarkets(DA_MARKETS);
-initMarkets(IDA_MARKETS);
-initMarkets(BAL_MARKETS);
-
-setTimeout(()=>{
-  initChart();
-  fullRender();
-  setInterval(fullRender, 1800);
-  setInterval(updateClock, 1000);
-}, 100);
+refreshState();
+setInterval(refreshState, 15000);
+setInterval(updateClock, 1000);
+window.addEventListener('resize', updateChart);
 </script>
+</body>
+</html>
