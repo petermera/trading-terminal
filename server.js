@@ -166,7 +166,13 @@ const selectSyncStatus = database.prepare(`
 const selectTrades = database.prepare(`
   SELECT id, market_id AS marketId, side, quantity AS qty, fill_price AS entryPx,
          currency, created_at AS createdAt
-  FROM paper_trades ORDER BY created_at
+  FROM paper_trades ORDER BY created_at, rowid
+`);
+const selectTradeById = database.prepare(`
+  SELECT t.id, t.market_id AS marketId, t.side, t.quantity AS qty,
+         t.fill_price AS px, t.currency, t.created_at AS createdAt, m.name AS market
+  FROM paper_trades t JOIN markets m ON m.id = t.market_id
+  WHERE t.id = ?
 `);
 const selectRecentTrades = database.prepare(`
   SELECT t.id, t.market_id AS marketId, t.side, t.quantity AS qty, m.name AS market,
@@ -334,6 +340,99 @@ function quoteForMarket(market, now) {
   };
 }
 
+function buildPaperLedger(trades, markets, valuationTime) {
+  const positionsByMarket = new Map();
+  let volume = 0;
+  let tradedValue = 0;
+
+  for (const trade of trades) {
+    const quantity = Number(trade.qty);
+    const fillPrice = Number(trade.entryPx);
+    const signedQuantity = trade.side === 'BUY' ? quantity : -quantity;
+    const position = positionsByMarket.get(trade.marketId) ?? {
+      quantity: 0,
+      averagePrice: 0,
+      realizedPnl: 0
+    };
+
+    volume += quantity;
+    tradedValue += quantity * fillPrice;
+
+    if (position.quantity === 0 || Math.sign(position.quantity) === Math.sign(signedQuantity)) {
+      const previousQuantity = Math.abs(position.quantity);
+      const nextQuantity = previousQuantity + quantity;
+      position.averagePrice = (
+        position.averagePrice * previousQuantity + fillPrice * quantity
+      ) / nextQuantity;
+      position.quantity += signedQuantity;
+    } else {
+      const closedQuantity = Math.min(Math.abs(position.quantity), quantity);
+      position.realizedPnl += (position.quantity > 0 ? 1 : -1) *
+        (fillPrice - position.averagePrice) * closedQuantity;
+      const nextQuantity = position.quantity + signedQuantity;
+      if (nextQuantity === 0) {
+        position.averagePrice = 0;
+      } else if (Math.sign(nextQuantity) !== Math.sign(position.quantity)) {
+        position.averagePrice = fillPrice;
+      }
+      position.quantity = nextQuantity;
+    }
+
+    positionsByMarket.set(trade.marketId, position);
+  }
+
+  const positions = [];
+  let realizedPnl = 0;
+  let unrealizedPnl = 0;
+  let allMarksAvailable = true;
+
+  for (const [marketId, position] of positionsByMarket) {
+    realizedPnl += position.realizedPnl;
+    if (position.quantity === 0) continue;
+
+    const market = markets[marketId];
+    const markIsFresh = market?.price !== null && market?.freshness === 'fresh';
+    const markPrice = markIsFresh ? market.price : null;
+    const pnl = markIsFresh
+      ? Math.sign(position.quantity) * (markPrice - position.averagePrice) * Math.abs(position.quantity)
+      : null;
+    if (pnl === null) allMarksAvailable = false;
+    else unrealizedPnl += pnl;
+
+    positions.push({
+      marketId,
+      market: market?.name ?? marketId,
+      side: position.quantity > 0 ? 'BUY' : 'SELL',
+      qty: Math.abs(position.quantity),
+      entryPx: position.averagePrice,
+      currency: 'EUR',
+      unit: 'MWh',
+      markUnit: market?.unit ?? null,
+      markPrice,
+      markStatus: market?.price == null ? 'missing' : markIsFresh ? 'fresh' : 'stale',
+      markSource: market?.price == null ? null : SOURCE_NAME,
+      markSourceUrl: market?.sourceUrl ?? null,
+      markLicenseInfo: market?.licenseInfo ?? null,
+      markTimestamp: market?.intervalStart ?? null,
+      markFetchedAt: market?.fetchedAt ?? null,
+      valuationTime,
+      realizedPnl: position.realizedPnl,
+      pnl
+    });
+  }
+
+  return {
+    positions,
+    session: {
+      volume,
+      executionVwap: volume > 0 ? tradedValue / volume : null,
+      realizedPnl,
+      unrealizedPnl: allMarksAvailable ? unrealizedPnl : null,
+      totalPnl: allMarksAvailable ? realizedPnl + unrealizedPnl : null
+    }
+  };
+}
+
 function snapshot(selectedMarketId = 'epex-de') {
   const now = new Date();
   const marketDefinitions = selectMarkets.all();
@@ -356,12 +455,7 @@ function snapshot(selectedMarketId = 'epex-de') {
     ? selectDayStats.get(selected.id, dayStart.toISOString(), now.toISOString())
     : { high: null, low: null, average: null };
   const trades = selectTrades.all();
-  const positions = trades.map((trade) => ({
-    ...trade,
-    pnl: markets[trade.marketId]?.price == null || markets[trade.marketId]?.freshness !== 'fresh'
-      ? null
-      : (trade.side === 'BUY' ? 1 : -1) * (markets[trade.marketId].price - trade.entryPx) * trade.qty
-  }));
+  const ledger = buildPaperLedger(trades, markets, now.toISOString());
   const tradeLog = selectRecentTrades.all().reverse().map((trade) => {
     const currentPrice = markets[trade.marketId]?.price;
     const pnl = currentPrice == null || markets[trade.marketId]?.freshness !== 'fresh'
@@ -372,13 +466,13 @@ function snapshot(selectedMarketId = 'epex-de') {
 
   return {
     markets,
-    positions,
+    positions: ledger.positions,
     tradeLog,
     session: {
       high: stats.high,
       low: stats.low,
       average: stats.average,
-      volume: trades.reduce((total, trade) => total + trade.qty, 0)
+      ...ledger.session
     },
     dataStatus: {
       source: SOURCE_NAME,
@@ -518,6 +612,33 @@ async function handleRequest(request, response) {
     if (!Number.isInteger(body.quantity) || body.quantity < 1 || body.quantity > 500) {
       return sendJson(response, 400, { error: 'Quantity must be a whole number from 1 to 500 MWh.' });
     }
+    if (body.fillId !== undefined &&
+        (typeof body.fillId !== 'string' || body.fillId.trim().length === 0 || body.fillId.length > 100)) {
+      return sendJson(response, 400, { error: 'Fill identifier must be a non-empty string of at most 100 characters.' });
+    }
+
+    const id = body.fillId ?? randomUUID();
+    const existingTrade = selectTradeById.get(id);
+    if (existingTrade) {
+      if (existingTrade.marketId !== market.id || existingTrade.side !== body.side ||
+          existingTrade.qty !== body.quantity) {
+        return sendJson(response, 409, { error: 'This fill identifier was already used for a different paper fill.' });
+      }
+      return sendJson(response, 200, {
+        ...snapshot(market.id),
+        trade: {
+          id: existingTrade.id,
+          time: existingTrade.createdAt.slice(11, 19),
+          side: existingTrade.side,
+          qty: existingTrade.qty,
+          market: existingTrade.market,
+          px: existingTrade.px.toFixed(2),
+          priceSource: SOURCE_NAME
+        },
+        replayed: true
+      });
+    }
+
     if (!market.biddingZone) {
       return sendJson(response, 409, { error: 'This product does not have a connected real-price feed. No trade was created.' });
     }
@@ -530,7 +651,6 @@ async function handleRequest(request, response) {
     const spread = body.side === 'BUY' ? 0.1 : -0.1;
     const fillPrice = quote.price + spread;
     const createdAt = new Date().toISOString();
-    const id = randomUUID();
     insertTrade.run(id, market.id, body.side, body.quantity, fillPrice, createdAt);
     const result = snapshot(market.id);
     return sendJson(response, 201, {
@@ -543,7 +663,8 @@ async function handleRequest(request, response) {
         market: market.name,
         px: fillPrice.toFixed(2),
         priceSource: SOURCE_NAME
-      }
+      },
+      replayed: false
     });
   }
 
@@ -607,4 +728,6 @@ if (require.main === module) {
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
 }
 
-module.exports = { DAY_AHEAD_MARKETS, MARKETS, parsePriceFeed, quoteForMarket, snapshot, syncAllMarkets };
+module.exports = {
+  DAY_AHEAD_MARKETS, MARKETS, buildPaperLedger, parsePriceFeed, quoteForMarket, snapshot, syncAllMarkets
+};

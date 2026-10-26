@@ -41,6 +41,8 @@ The database contains:
 - `feed_sync` — per-zone import status and errors
 - `paper_trades` — locally recorded paper fills
 
+Paper positions are netted per market using weighted-average fill cost. The state API reports realized and mark-to-market P&L, mark source/timestamps and freshness, plus execution volume/VWAP separately from the published day-ahead source average. Supplying a stable `fillId` to `POST /api/trades` makes replay idempotent; reusing it for different trade details is rejected.
+
 ## Technology
 
 HTML/CSS/JavaScript render the browser UI. Node.js provides the API and data importer. SQLite is the real local database. C++ is not required to serve a browser interface; [`cpp/`](./cpp/) remains a separate optional console demonstration.
@@ -50,3 +52,4 @@ HTML/CSS/JavaScript render the browser UI. Node.js provides the API and data imp
 The app is **not** production or live-trading software. A production system needs verified and licensed feeds for each exact product, secure user authentication, an appropriately hosted production database, feed monitoring/reconciliation, risk controls, audit trails, and a separately reviewed broker/exchange integration. Never treat public day-ahead prices as an executable quote for another market product.
 
 The longer-term product repository is [`petermera/Terminal_Trading`](https://github.com/petermera/Terminal_Trading).
+This repository remains an isolated local prototype; its SQLite database and paper-trading API are not shared product services. Coordinate shared market-data contracts or ingestion ownership with the product repository before adding another reusable connector here.
