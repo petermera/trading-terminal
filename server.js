@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, timingSafeEqual } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 const HOST = '127.0.0.1';
@@ -14,12 +14,15 @@ const DB_FILE = path.resolve(
 const PRICE_API_URL = process.env.VOLT_PRICE_API_URL || 'https://api.energy-charts.info/price';
 const PRICE_API_TIMEOUT_MS = 20_000;
 const PRICE_REFRESH_INTERVAL_MS = 15 * 60_000;
+const SYNC_CHECK_INTERVAL_MS = 60_000;
 const SOURCE_REQUEST_SPACING_MS = Number(process.env.VOLT_SOURCE_REQUEST_SPACING_MS ?? 2000);
 const MAX_QUOTE_AGE_MS = 90 * 60_000;
 const MAX_BODY_BYTES = 16 * 1024;
 const SOURCE_NAME = 'Energy-Charts API';
 const SOURCE_URL = 'https://api.energy-charts.info/';
 const FIRST_HISTORY_MS = 72 * 60 * 60_000;
+const DAY_AHEAD_FORWARD_WINDOW_MS = 48 * 60 * 60_000;
+const WRITE_TOKEN = randomUUID();
 
 const MARKETS = [
   { id: 'epex-de', name: 'EPEX DE/LU', region: 'Germany/Luxembourg', product: 'Day-ahead', biddingZone: 'DE-LU' },
@@ -30,7 +33,7 @@ const MARKETS = [
   { id: 'omie-pt', name: 'OMIE PT', region: 'Portugal', product: 'Day-ahead', biddingZone: 'PT' },
   { id: 'np-dk1', name: 'Nord Pool DK1', region: 'Denmark West', product: 'Day-ahead', biddingZone: 'DK1' },
   { id: 'np-no1', name: 'Nord Pool NO1', region: 'Norway South-East', product: 'Day-ahead', biddingZone: 'NO1' },
-  { id: 'n2ex-uk', name: 'N2EX GB', region: 'Great Britain', product: 'Day-ahead', biddingZone: 'GB' },
+  { id: 'n2ex-uk', name: 'N2EX GB', region: 'Great Britain', product: 'Day-ahead', biddingZone: null },
   { id: 'ida-de', name: 'IDA DE/LU', region: 'Germany/Luxembourg', product: 'Intraday', biddingZone: null },
   { id: 'ida-fr', name: 'IDA FR', region: 'France', product: 'Intraday', biddingZone: null },
   { id: 'ida-es', name: 'IDA ES', region: 'Spain', product: 'Intraday', biddingZone: null },
@@ -163,7 +166,13 @@ const selectSyncStatus = database.prepare(`
 const selectTrades = database.prepare(`
   SELECT id, market_id AS marketId, side, quantity AS qty, fill_price AS entryPx,
          currency, created_at AS createdAt
-  FROM paper_trades ORDER BY created_at
+  FROM paper_trades ORDER BY created_at, rowid
+`);
+const selectTradeById = database.prepare(`
+  SELECT t.id, t.market_id AS marketId, t.side, t.quantity AS qty,
+         t.fill_price AS px, t.currency, t.created_at AS createdAt, m.name AS market
+  FROM paper_trades t JOIN markets m ON m.id = t.market_id
+  WHERE t.id = ?
 `);
 const selectRecentTrades = database.prepare(`
   SELECT t.id, t.market_id AS marketId, t.side, t.quantity AS qty, m.name AS market,
@@ -194,7 +203,7 @@ function parsePriceFeed(payload, now) {
     const price = Number(payload.price[index]);
     if (!Number.isFinite(timestamp) || !Number.isFinite(price)) continue;
     const interval = new Date(timestamp * 1000);
-    if (Number.isNaN(interval.getTime()) || interval.getTime() > now.getTime()) continue;
+    if (Number.isNaN(interval.getTime())) continue;
     parsed.push({
       intervalStart: interval.toISOString(),
       price,
@@ -214,7 +223,7 @@ function parsePriceFeed(payload, now) {
 async function syncBiddingZone(market, now = new Date()) {
   upsertSyncStatus.run(market.biddingZone, 'syncing', now.toISOString(), null, null);
   const start = new Date(now.getTime() - FIRST_HISTORY_MS);
-  const end = new Date(now.getTime() + 6 * 60 * 60_000);
+  const end = new Date(now.getTime() + DAY_AHEAD_FORWARD_WINDOW_MS);
   const url = new URL(PRICE_API_URL);
   url.searchParams.set('bzn', market.biddingZone);
   url.searchParams.set('start', start.toISOString());
@@ -331,6 +340,99 @@ function quoteForMarket(market, now) {
   };
 }
 
+function buildPaperLedger(trades, markets, valuationTime) {
+  const positionsByMarket = new Map();
+  let volume = 0;
+  let tradedValue = 0;
+
+  for (const trade of trades) {
+    const quantity = Number(trade.qty);
+    const fillPrice = Number(trade.entryPx);
+    const signedQuantity = trade.side === 'BUY' ? quantity : -quantity;
+    const position = positionsByMarket.get(trade.marketId) ?? {
+      quantity: 0,
+      averagePrice: 0,
+      realizedPnl: 0
+    };
+
+    volume += quantity;
+    tradedValue += quantity * fillPrice;
+
+    if (position.quantity === 0 || Math.sign(position.quantity) === Math.sign(signedQuantity)) {
+      const previousQuantity = Math.abs(position.quantity);
+      const nextQuantity = previousQuantity + quantity;
+      position.averagePrice = (
+        position.averagePrice * previousQuantity + fillPrice * quantity
+      ) / nextQuantity;
+      position.quantity += signedQuantity;
+    } else {
+      const closedQuantity = Math.min(Math.abs(position.quantity), quantity);
+      position.realizedPnl += (position.quantity > 0 ? 1 : -1) *
+        (fillPrice - position.averagePrice) * closedQuantity;
+      const nextQuantity = position.quantity + signedQuantity;
+      if (nextQuantity === 0) {
+        position.averagePrice = 0;
+      } else if (Math.sign(nextQuantity) !== Math.sign(position.quantity)) {
+        position.averagePrice = fillPrice;
+      }
+      position.quantity = nextQuantity;
+    }
+
+    positionsByMarket.set(trade.marketId, position);
+  }
+
+  const positions = [];
+  let realizedPnl = 0;
+  let unrealizedPnl = 0;
+  let allMarksAvailable = true;
+
+  for (const [marketId, position] of positionsByMarket) {
+    realizedPnl += position.realizedPnl;
+    if (position.quantity === 0) continue;
+
+    const market = markets[marketId];
+    const markIsFresh = market?.price !== null && market?.freshness === 'fresh';
+    const markPrice = markIsFresh ? market.price : null;
+    const pnl = markIsFresh
+      ? Math.sign(position.quantity) * (markPrice - position.averagePrice) * Math.abs(position.quantity)
+      : null;
+    if (pnl === null) allMarksAvailable = false;
+    else unrealizedPnl += pnl;
+
+    positions.push({
+      marketId,
+      market: market?.name ?? marketId,
+      side: position.quantity > 0 ? 'BUY' : 'SELL',
+      qty: Math.abs(position.quantity),
+      entryPx: position.averagePrice,
+      currency: 'EUR',
+      unit: 'MWh',
+      markUnit: market?.unit ?? null,
+      markPrice,
+      markStatus: market?.price == null ? 'missing' : markIsFresh ? 'fresh' : 'stale',
+      markSource: market?.price == null ? null : SOURCE_NAME,
+      markSourceUrl: market?.sourceUrl ?? null,
+      markLicenseInfo: market?.licenseInfo ?? null,
+      markTimestamp: market?.intervalStart ?? null,
+      markFetchedAt: market?.fetchedAt ?? null,
+      valuationTime,
+      realizedPnl: position.realizedPnl,
+      pnl
+    });
+  }
+
+  return {
+    positions,
+    session: {
+      volume,
+      executionVwap: volume > 0 ? tradedValue / volume : null,
+      realizedPnl,
+      unrealizedPnl: allMarksAvailable ? unrealizedPnl : null,
+      totalPnl: allMarksAvailable ? realizedPnl + unrealizedPnl : null
+    }
+  };
+}
+
 function snapshot(selectedMarketId = 'epex-de') {
   const now = new Date();
   const marketDefinitions = selectMarkets.all();
@@ -353,12 +455,7 @@ function snapshot(selectedMarketId = 'epex-de') {
     ? selectDayStats.get(selected.id, dayStart.toISOString(), now.toISOString())
     : { high: null, low: null, average: null };
   const trades = selectTrades.all();
-  const positions = trades.map((trade) => ({
-    ...trade,
-    pnl: markets[trade.marketId]?.price == null || markets[trade.marketId]?.freshness !== 'fresh'
-      ? null
-      : (trade.side === 'BUY' ? 1 : -1) * (markets[trade.marketId].price - trade.entryPx) * trade.qty
-  }));
+  const ledger = buildPaperLedger(trades, markets, now.toISOString());
   const tradeLog = selectRecentTrades.all().reverse().map((trade) => {
     const currentPrice = markets[trade.marketId]?.price;
     const pnl = currentPrice == null || markets[trade.marketId]?.freshness !== 'fresh'
@@ -369,13 +466,13 @@ function snapshot(selectedMarketId = 'epex-de') {
 
   return {
     markets,
-    positions,
+    positions: ledger.positions,
     tradeLog,
     session: {
       high: stats.high,
       low: stats.low,
       average: stats.average,
-      volume: trades.reduce((total, trade) => total + trade.qty, 0)
+      ...ledger.session
     },
     dataStatus: {
       source: SOURCE_NAME,
@@ -391,7 +488,8 @@ function snapshot(selectedMarketId = 'epex-de') {
         marketsWithPrices: Object.values(markets).filter((market) => market.price !== null).length
       },
       zoneSync: selectSyncStatus.all()
-    }
+    },
+    writeToken: WRITE_TOKEN
   };
 }
 
@@ -433,8 +531,55 @@ function readJson(request) {
   });
 }
 
+function validateWriteRequest(request, response) {
+  const allowedHosts = new Set([`${HOST}:${PORT}`, `localhost:${PORT}`]);
+  if (!allowedHosts.has(request.headers.host)) {
+    sendJson(response, 403, { error: 'This request host is not allowed.' });
+    return false;
+  }
+
+  const origin = request.headers.origin;
+  if (origin !== undefined) {
+    let parsedOrigin;
+    try {
+      parsedOrigin = new URL(origin);
+    } catch {
+      sendJson(response, 403, { error: 'This request origin is not allowed.' });
+      return false;
+    }
+    if (parsedOrigin.protocol !== 'http:' || parsedOrigin.origin !== origin ||
+        !allowedHosts.has(parsedOrigin.host)) {
+      sendJson(response, 403, { error: 'This request origin is not allowed.' });
+      return false;
+    }
+  }
+
+  const contentType = request.headers['content-type'] || '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    sendJson(response, 415, { error: 'Content-Type must be application/json.' });
+    return false;
+  }
+
+  const token = request.headers['x-csrf-token'] || '';
+  const tokenBuffer = Buffer.from(token);
+  const expectedTokenBuffer = Buffer.from(WRITE_TOKEN);
+  if (tokenBuffer.length !== expectedTokenBuffer.length ||
+      !timingSafeEqual(tokenBuffer, expectedTokenBuffer)) {
+    sendJson(response, 403, { error: 'A valid write token is required.' });
+    return false;
+  }
+
+  return true;
+}
+
 async function handleRequest(request, response) {
   const url = new URL(request.url, `http://${HOST}:${PORT}`);
+
+  if (request.method === 'POST' &&
+      (url.pathname === '/api/refresh' || url.pathname === '/api/trades') &&
+      !validateWriteRequest(request, response)) {
+    return;
+  }
 
   if (request.method === 'GET' && url.pathname === '/api/state') {
     const marketId = url.searchParams.get('marketId') || 'epex-de';
@@ -467,6 +612,33 @@ async function handleRequest(request, response) {
     if (!Number.isInteger(body.quantity) || body.quantity < 1 || body.quantity > 500) {
       return sendJson(response, 400, { error: 'Quantity must be a whole number from 1 to 500 MWh.' });
     }
+    if (body.fillId !== undefined &&
+        (typeof body.fillId !== 'string' || body.fillId.trim().length === 0 || body.fillId.length > 100)) {
+      return sendJson(response, 400, { error: 'Fill identifier must be a non-empty string of at most 100 characters.' });
+    }
+
+    const id = body.fillId ?? randomUUID();
+    const existingTrade = selectTradeById.get(id);
+    if (existingTrade) {
+      if (existingTrade.marketId !== market.id || existingTrade.side !== body.side ||
+          existingTrade.qty !== body.quantity) {
+        return sendJson(response, 409, { error: 'This fill identifier was already used for a different paper fill.' });
+      }
+      return sendJson(response, 200, {
+        ...snapshot(market.id),
+        trade: {
+          id: existingTrade.id,
+          time: existingTrade.createdAt.slice(11, 19),
+          side: existingTrade.side,
+          qty: existingTrade.qty,
+          market: existingTrade.market,
+          px: existingTrade.px.toFixed(2),
+          priceSource: SOURCE_NAME
+        },
+        replayed: true
+      });
+    }
+
     if (!market.biddingZone) {
       return sendJson(response, 409, { error: 'This product does not have a connected real-price feed. No trade was created.' });
     }
@@ -479,7 +651,6 @@ async function handleRequest(request, response) {
     const spread = body.side === 'BUY' ? 0.1 : -0.1;
     const fillPrice = quote.price + spread;
     const createdAt = new Date().toISOString();
-    const id = randomUUID();
     insertTrade.run(id, market.id, body.side, body.quantity, fillPrice, createdAt);
     const result = snapshot(market.id);
     return sendJson(response, 201, {
@@ -492,7 +663,8 @@ async function handleRequest(request, response) {
         market: market.name,
         px: fillPrice.toFixed(2),
         priceSource: SOURCE_NAME
-      }
+      },
+      replayed: false
     });
   }
 
@@ -535,7 +707,7 @@ async function start() {
   syncAllMarkets().catch((error) => console.error(`Initial market-data sync failed: ${error.message}`));
   const syncTimer = setInterval(() => {
     syncAllMarkets().catch((error) => console.error(`Scheduled market-data sync failed: ${error.message}`));
-  }, PRICE_REFRESH_INTERVAL_MS);
+  }, SYNC_CHECK_INTERVAL_MS);
   syncTimer.unref();
 }
 
@@ -556,4 +728,6 @@ if (require.main === module) {
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
 }
 
-module.exports = { DAY_AHEAD_MARKETS, MARKETS, parsePriceFeed, quoteForMarket, snapshot, syncAllMarkets };
+module.exports = {
+  DAY_AHEAD_MARKETS, MARKETS, buildPaperLedger, parsePriceFeed, quoteForMarket, snapshot, syncAllMarkets
+};
