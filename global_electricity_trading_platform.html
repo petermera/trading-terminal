@@ -10,30 +10,159 @@
 :root {
   color-scheme: light;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --color-background-primary: #ffffff;
-  --color-background-secondary: #f6f7f8;
-  --color-border-tertiary: #e1e4e8;
-  --color-border-secondary: #c6cbd1;
-  --color-text-primary: #202428;
-  --color-text-secondary: #646d76;
-  --color-text-tertiary: #858d95;
+  --font-size-xs: 10px;
+  --font-size-sm: 13px;
+  --font-size-md: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 25px;
+  --line-height-compact: 1.4;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --color-background-primary: #f7f4ed;
+  --color-background-secondary: #eee9df;
+  --color-background-canvas: #e6e0d5;
+  --color-background-accent: #dce9e5;
+  --color-background-positive: #e4ecdc;
+  --color-background-positive-hover: #cfddc5;
+  --color-background-negative: #f2e3df;
+  --color-background-negative-hover: #e8cec7;
+  --color-border-tertiary: #d7d0c4;
+  --color-border-secondary: #bcb3a5;
+  --color-border-accent: #32675e;
+  --color-border-positive: #97c459;
+  --color-border-negative: #f09595;
+  --color-text-primary: #292c29;
+  --color-text-secondary: #51564f;
+  --color-text-tertiary: #60645d;
+  --color-text-accent: #285d55;
+  --color-text-positive: #386329;
+  --color-text-negative: #963f35;
+  --color-text-warning: #7a541e;
+  --color-chart-grid: rgba(128, 128, 128, 0.16);
+  --color-chart-fill: rgba(55, 138, 221, 0.08);
   --border-radius-md: 6px;
+  --border-radius-sm: 4px;
+  --border-radius-input: 10px;
+  --motion-fast: 150ms;
+  --focus-ring: 0 0 0 2px var(--color-background-primary), 0 0 0 4px var(--color-border-accent);
 }
 body {
   margin: 0;
   padding: 16px;
-  background: #f0f2f4;
+  background: var(--color-background-canvas);
   color: var(--color-text-primary);
   font-family: var(--font-mono);
 }
 .platform { max-width: 1440px; margin: 0 auto; }
 #mainChart { display: block; width: 100%; height: 100%; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.connection-error { margin: 0 0 10px; padding: 8px 12px; border: 1px solid #f09595; border-radius: var(--border-radius-md); background: #fcebeb; color: #a32d2d; font-size: 12px; }
-.data-meta { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin: -2px 0 10px; padding: 8px 12px; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-secondary); font-size: 11px; }
-.data-meta a { color: #185fa5; }
-.refresh-btn { border: 1px solid var(--color-border-secondary); background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 4px 8px; color: var(--color-text-primary); font: inherit; cursor: pointer; }
-.market-unavailable { display: inline-block; margin-top: 8px; color: var(--color-text-tertiary); font-size: 10px; }
+.connection-error { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--color-border-negative); border-radius: var(--border-radius-md); background: var(--color-background-negative); color: var(--color-text-negative); font-size: var(--font-size-md); }
+.data-meta { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: -2px 0 10px; padding: 8px 12px; border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.data-meta a { color: var(--color-text-accent); }
+.refresh-btn { border: 1px solid var(--color-border-secondary); background: var(--color-background-secondary); border-radius: var(--border-radius-sm); padding: var(--space-1) var(--space-2); color: var(--color-text-primary); font: inherit; cursor: pointer; }
+.refresh-btn:hover:not(:disabled) { background: var(--color-background-primary); border-color: var(--color-border-accent); }
+.refresh-btn:disabled { cursor: wait; opacity: 0.65; }
+.refresh-btn:focus-visible, .tab:focus-visible, .trade-btn:focus-visible, .trade-input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.market-unavailable { display: inline-block; margin-top: 8px; color: var(--color-text-tertiary); font-size: var(--font-size-xs); }
+</style>
+</head>
+<body>
+<h2 class="sr-only">European electricity day-ahead market data and paper-trading dashboard</h2>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+.platform { padding: 8px 0; }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 1px solid var(--color-border-tertiary); margin-bottom: 10px; }
+.topbar-left { display: flex; align-items: center; gap: var(--space-4); }
+.topbar-metrics { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; }
+.topbar-metric { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.metric-value { font-weight: 500; color: var(--color-text-primary); }
+.logo { font-size: 13px; font-weight: 500; color: var(--color-text-primary); letter-spacing: 0.06em; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-positive); display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.status-txt { font-size: var(--font-size-sm); color: var(--color-text-positive); font-family: var(--font-mono); }
+.clock { font-size: var(--font-size-md); color: var(--color-text-secondary); font-family: var(--font-mono); }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.tab { padding: 6px 14px; border-radius: var(--border-radius-md); border: 1px solid var(--color-border-tertiary); background: var(--color-background-primary); font-size: var(--font-size-md); font-family: var(--font-mono); cursor: pointer; color: var(--color-text-secondary); transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast); }
+.tab.active { border-color: var(--color-border-accent); color: var(--color-text-accent); background: var(--color-background-accent); }
+.tab:hover:not(.active) { background: var(--color-background-secondary); color: var(--color-text-primary); }
+.main-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-2); margin-bottom: var(--space-2); }
+.market-card { background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; cursor: pointer; transition: border-color var(--motion-fast), background-color var(--motion-fast); position: relative; overflow: hidden; }
+.market-card:hover { border-color: var(--color-border-secondary); }
+.market-card:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.market-card.selected { border-color: var(--color-border-accent); }
+.mc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+.mc-name { font-size: var(--font-size-sm); color: var(--color-text-secondary); font-family: var(--font-mono); }
+.mc-product { font-size: var(--font-size-xs); color: var(--color-text-tertiary); font-family: var(--font-mono); }
+.mc-price { font-size: var(--font-size-xl); font-weight: 500; font-family: var(--font-mono); color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.mc-change { font-size: var(--font-size-sm); font-family: var(--font-mono); margin-top: 2px; line-height: var(--line-height-compact); }
+.up { color: var(--color-text-positive); }
+.down { color: var(--color-text-negative); }
+.neutral { color: var(--color-text-secondary); }
+.spark { width: 100%; height: 28px; margin-top: 6px; }
+.bottom-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: var(--space-2); }
+.panel { background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: var(--space-3); }
+.panel-title { font-size: var(--font-size-sm); color: var(--color-text-secondary); font-family: var(--font-mono); margin-bottom: 10px; letter-spacing: 0.05em; border-bottom: 1px solid var(--color-border-tertiary); padding-bottom: var(--space-2); }
+.panel-subtitle { margin-bottom: 6px; }
+.section-divider { margin-top: 10px; border-top: 1px solid var(--color-border-tertiary); padding-top: var(--space-2); }
+.data-label { font-size: var(--font-size-xs); color: var(--color-text-tertiary); font-family: var(--font-mono); }
+.book-header { display: grid; grid-template-columns: 1fr 0.8fr 1fr; gap: var(--space-1); margin-bottom: var(--space-1); }
+.book-header span:nth-child(2) { text-align: center; }
+.book-header span:last-child { text-align: right; }
+.chart-panel { background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: var(--space-3); margin-bottom: var(--space-2); }
+.chart-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2); margin-bottom: 10px; }
+.chart-title { font-size: var(--font-size-md); font-weight: 500; color: var(--color-text-primary); font-family: var(--font-mono); }
+.chart-meta { font-size: var(--font-size-sm); color: var(--color-text-secondary); font-family: var(--font-mono); }
+.chart-container { position: relative; width: 100%; height: 200px; }
+.ob-row { display: grid; grid-template-columns: 1fr 0.8fr 1fr; gap: var(--space-1); padding: 3px 0; font-size: var(--font-size-sm); font-family: var(--font-mono); border-bottom: 1px solid var(--color-border-tertiary); position: relative; }
+.ob-row:last-child { border-bottom: none; }
+.ob-vol { color: var(--color-text-secondary); text-align: right; }
+.ob-value { position: relative; z-index: 1; }
+.ob-vol--bid { color: var(--color-text-positive); }
+.ob-vol--ask { color: var(--color-text-negative); }
+.ob-price-bid { color: var(--color-text-positive); font-weight: 500; text-align: center; }
+.ob-price-ask { color: var(--color-text-negative); font-weight: 500; text-align: center; }
+.ob-depth-bid { position: absolute; right: 50%; top: 0; height: 100%; background: var(--color-background-positive); opacity: 0.5; z-index: 0; }
+.ob-depth-ask { position: absolute; left: 50%; top: 0; height: 100%; background: var(--color-background-negative); opacity: 0.5; z-index: 0; }
+.ob-spread { text-align: center; padding: 5px 0; font-size: var(--font-size-xs); color: var(--color-text-secondary); font-family: var(--font-mono); border-top: 1px dashed var(--color-border-tertiary); border-bottom: 1px dashed var(--color-border-tertiary); margin: 3px 0; }
+.pos-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: var(--font-size-sm); font-family: var(--font-mono); border-bottom: 1px solid var(--color-border-tertiary); }
+.pos-row:last-child { border-bottom: none; }
+.pos-market { color: var(--color-text-primary); }
+.pos-vol { color: var(--color-text-secondary); }
+.pos-pnl { font-weight: 500; }
+.trade-btn { width: 100%; padding: var(--space-2); border-radius: var(--border-radius-sm); border: 1px solid var(--color-border-tertiary); font-size: var(--font-size-md); font-family: var(--font-mono); cursor: pointer; margin-bottom: 5px; transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast); }
+.buy-btn { background: var(--color-background-positive); color: var(--color-text-positive); border-color: var(--color-border-positive); }
+.buy-btn:hover { background: var(--color-background-positive-hover); }
+.sell-btn { background: var(--color-background-negative); color: var(--color-text-negative); border-color: var(--color-border-negative); }
+.sell-btn:hover { background: var(--color-background-negative-hover); }
+.trade-input { width: 100%; padding: 7px 10px; border-radius: var(--border-radius-input); border: 1px solid var(--color-border-secondary); font-size: var(--font-size-md); font-family: var(--font-mono); color: var(--color-text-primary); background: var(--color-background-primary); margin-bottom: 5px; }
+.trade-input--compact { background: var(--color-background-primary); border: 1px solid var(--color-border-secondary); padding: 8px 10px; font-size: var(--font-size-lg); font-weight: 500; width: 100%; }
+.trade-status { min-height: 1.4em; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.kpi { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 8px 10px; }
+.kpi-label { font-size: var(--font-size-xs); color: var(--color-text-tertiary); font-family: var(--font-mono); margin-bottom: 3px; }
+.kpi-val { font-size: var(--font-size-lg); font-weight: 500; font-family: var(--font-mono); color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.spread-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: var(--font-size-sm); font-family: var(--font-mono); border-bottom: 1px solid var(--color-border-tertiary); }
+.spread-row:last-child { border-bottom: none; }
+.spread-name { color: var(--color-text-secondary); }
+.spread-val { font-weight: 500; }
+.ticker-bar { display: flex; gap: 0; overflow: hidden; margin-bottom: 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 1px solid var(--color-border-tertiary); padding: 7px 14px; }
+.tick-item { display: flex; align-items: center; gap: 6px; margin-right: var(--space-6); white-space: nowrap; font-size: var(--font-size-sm); font-family: var(--font-mono); }
+.tick-name { color: var(--color-text-secondary); }
+.tick-price { color: var(--color-text-primary); font-weight: 500; }
+.trade-log { max-height: 120px; overflow-y: auto; }
+.log-row { font-size: var(--font-size-xs); font-family: var(--font-mono); color: var(--color-text-secondary); padding: 2px 0; border-bottom: 1px solid var(--color-border-tertiary); display: flex; gap: 6px; }
+.log-row:last-child { border-bottom: none; }
+.log-time { color: var(--color-text-tertiary); }
+.log-side-buy { color: var(--color-text-positive); }
+.log-side-sell { color: var(--color-text-negative); }
+.change-badge { font-size: var(--font-size-xs); font-family: var(--font-mono); padding: 2px 6px; border-radius: var(--border-radius-sm); }
+.change-badge.neutral { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+.change-badge.positive { background: var(--color-background-positive); color: var(--color-text-positive); }
+.change-badge.negative { background: var(--color-background-negative); color: var(--color-text-negative); }
+.tick-change { font-size: var(--font-size-xs); }
 @media (max-width: 900px) {
   .main-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bottom-grid { grid-template-columns: 1fr 1fr; }
@@ -47,109 +176,36 @@ body {
   .tab { padding: 6px 9px; }
   .ticker-bar { overflow-x: auto; }
 }
-</style>
-</head>
-<body>
-<h2 class="sr-only">European electricity day-ahead market data and paper-trading dashboard</h2>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: var(--font-mono); }
-.platform { padding: 8px 0; }
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); margin-bottom: 10px; }
-.topbar-left { display: flex; align-items: center; gap: 16px; }
-.logo { font-size: 13px; font-weight: 500; color: var(--color-text-primary); letter-spacing: 0.06em; }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #639922; display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-.status-txt { font-size: 11px; color: #639922; font-family: var(--font-mono); }
-.clock { font-size: 12px; color: var(--color-text-secondary); font-family: var(--font-mono); }
-.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-.tab { padding: 6px 14px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); background: var(--color-background-primary); font-size: 12px; font-family: var(--font-mono); cursor: pointer; color: var(--color-text-secondary); transition: all 0.15s; }
-.tab.active { border-color: #185FA5; color: #185FA5; background: #E6F1FB; }
-.tab:hover:not(.active) { background: var(--color-background-secondary); color: var(--color-text-primary); }
-.main-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-.market-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; position: relative; overflow: hidden; }
-.market-card:hover { border-color: var(--color-border-secondary); }
-.market-card.selected { border-color: #185FA5; }
-.mc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-.mc-name { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); }
-.mc-product { font-size: 10px; color: var(--color-text-tertiary); font-family: var(--font-mono); }
-.mc-price { font-size: 20px; font-weight: 500; font-family: var(--font-mono); color: var(--color-text-primary); }
-.mc-change { font-size: 11px; font-family: var(--font-mono); margin-top: 2px; }
-.up { color: #3B6D11; }
-.down { color: #A32D2D; }
-.neutral { color: var(--color-text-secondary); }
-.spark { width: 100%; height: 28px; margin-top: 6px; }
-.bottom-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px; }
-.panel { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; }
-.panel-title { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); margin-bottom: 10px; letter-spacing: 0.05em; border-bottom: 0.5px solid var(--color-border-tertiary); padding-bottom: 8px; }
-.chart-panel { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; margin-bottom: 8px; }
-.chart-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.chart-title { font-size: 12px; font-weight: 500; color: var(--color-text-primary); font-family: var(--font-mono); }
-.chart-meta { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-mono); }
-.ob-row { display: grid; grid-template-columns: 1fr 0.8fr 1fr; gap: 4px; padding: 3px 0; font-size: 11px; font-family: var(--font-mono); border-bottom: 0.5px solid var(--color-border-tertiary); position: relative; }
-.ob-row:last-child { border-bottom: none; }
-.ob-vol { color: var(--color-text-secondary); text-align: right; }
-.ob-price-bid { color: #3B6D11; font-weight: 500; text-align: center; }
-.ob-price-ask { color: #A32D2D; font-weight: 500; text-align: center; }
-.ob-depth-bid { position: absolute; right: 50%; top: 0; height: 100%; background: #EAF3DE; opacity: 0.5; z-index: 0; }
-.ob-depth-ask { position: absolute; left: 50%; top: 0; height: 100%; background: #FCEBEB; opacity: 0.5; z-index: 0; }
-.ob-spread { text-align: center; padding: 5px 0; font-size: 10px; color: var(--color-text-secondary); font-family: var(--font-mono); border-top: 0.5px dashed var(--color-border-tertiary); border-bottom: 0.5px dashed var(--color-border-tertiary); margin: 3px 0; }
-.pos-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 11px; font-family: var(--font-mono); border-bottom: 0.5px solid var(--color-border-tertiary); }
-.pos-row:last-child { border-bottom: none; }
-.pos-market { color: var(--color-text-primary); }
-.pos-vol { color: var(--color-text-secondary); }
-.pos-pnl { font-weight: 500; }
-.trade-btn { width: 100%; padding: 8px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); font-size: 12px; font-family: var(--font-mono); cursor: pointer; margin-bottom: 5px; transition: all 0.15s; }
-.buy-btn { background: #EAF3DE; color: #3B6D11; border-color: #97C459; }
-.buy-btn:hover { background: #C0DD97; }
-.sell-btn { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
-.sell-btn:hover { background: #F7C1C1; }
-.trade-input { width: 100%; padding: 7px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); font-size: 12px; font-family: var(--font-mono); color: var(--color-text-primary); background: var(--color-background-secondary); margin-bottom: 5px; }
-.kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
-.kpi { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 8px 10px; }
-.kpi-label { font-size: 10px; color: var(--color-text-tertiary); font-family: var(--font-mono); margin-bottom: 3px; }
-.kpi-val { font-size: 15px; font-weight: 500; font-family: var(--font-mono); color: var(--color-text-primary); }
-.spread-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 11px; font-family: var(--font-mono); border-bottom: 0.5px solid var(--color-border-tertiary); }
-.spread-row:last-child { border-bottom: none; }
-.spread-name { color: var(--color-text-secondary); }
-.spread-val { font-weight: 500; }
-.ticker-bar { display: flex; gap: 0; overflow: hidden; margin-bottom: 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); padding: 7px 14px; }
-.tick-item { display: flex; align-items: center; gap: 6px; margin-right: 24px; white-space: nowrap; font-size: 11px; font-family: var(--font-mono); }
-.tick-name { color: var(--color-text-secondary); }
-.tick-price { color: var(--color-text-primary); font-weight: 500; }
-.trade-log { max-height: 120px; overflow-y: auto; }
-.log-row { font-size: 10px; font-family: var(--font-mono); color: var(--color-text-secondary); padding: 2px 0; border-bottom: 0.5px solid var(--color-border-tertiary); display: flex; gap: 6px; }
-.log-row:last-child { border-bottom: none; }
-.log-time { color: var(--color-text-tertiary); }
-.log-side-buy { color: #3B6D11; }
-.log-side-sell { color: #A32D2D; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}
 </style>
 
 <div class="platform">
   <div class="topbar">
     <div class="topbar-left">
-      <span class="logo">⚡ VOLT TERMINAL</span>
+      <span class="logo">VOLT TERMINAL</span>
       <span id="server-status"><span class="status-dot"></span><span class="status-txt">CONNECTING</span></span>
       <span class="clock" id="clk">--:--:-- UTC</span>
     </div>
-    <div style="display:flex;gap:16px;align-items:center;">
-      <span style="font-size:11px;font-family:var(--font-mono);color:var(--color-text-secondary);">Total P&L: <span id="total-pnl" style="font-weight:500;color:#3B6D11;">+€0</span></span>
-      <span style="font-size:11px;font-family:var(--font-mono);color:var(--color-text-secondary);">Open positions: <span id="open-pos" style="font-weight:500;color:var(--color-text-primary);">3</span></span>
+    <div class="topbar-metrics">
+      <span class="topbar-metric">Total P&amp;L: <span id="total-pnl" class="metric-value up">+€0</span></span>
+      <span class="topbar-metric">Open positions: <span id="open-pos" class="metric-value">3</span></span>
     </div>
   </div>
   <div id="connection-error" class="connection-error" role="alert" hidden></div>
   <div class="data-meta">
     <span id="data-provenance">Connecting to the real-market-data database…</span>
-    <span>Paper trading only · no live orders · <button class="refresh-btn" onclick="refreshMarketData()">Sync source now</button></span>
+    <span>Paper trading only · no live orders · <button class="refresh-btn" type="button" onclick="refreshMarketData()">Sync source now</button></span>
   </div>
 
   <div class="ticker-bar" id="ticker-bar"></div>
 
   <div class="tabs">
-    <button class="tab active" onclick="setTab('da',this)">Day-Ahead</button>
-    <button class="tab" onclick="setTab('ida',this)">Intraday</button>
-    <button class="tab" onclick="setTab('bal',this)">Balancing</button>
-    <button class="tab" onclick="setTab('spread',this)">Spread Analysis</button>
+    <button class="tab active" type="button" aria-pressed="true" onclick="setTab('da',this)">Day-Ahead</button>
+    <button class="tab" type="button" aria-pressed="false" onclick="setTab('ida',this)">Intraday</button>
+    <button class="tab" type="button" aria-pressed="false" onclick="setTab('bal',this)">Balancing</button>
+    <button class="tab" type="button" aria-pressed="false" onclick="setTab('spread',this)">Spread Analysis</button>
   </div>
 
   <div id="market-grid" class="main-grid"></div>
@@ -159,7 +215,7 @@ body { font-family: var(--font-mono); }
       <span class="chart-title" id="chart-title">Day-ahead market prices</span>
       <span class="chart-meta" id="chart-meta">Loading published source intervals…</span>
     </div>
-    <div style="position:relative;width:100%;height:200px;">
+    <div class="chart-container">
       <canvas id="mainChart" role="img" aria-label="Published electricity market prices for selected bidding zone">Price data loading...</canvas>
     </div>
   </div>
@@ -167,28 +223,28 @@ body { font-family: var(--font-mono); }
   <div class="bottom-grid">
     <div class="panel">
       <div class="panel-title">PAPER-SIMULATED BOOK — <span id="ob-market">EPEX DE/LU</span></div>
-      <div style="display:grid;grid-template-columns:1fr 0.8fr 1fr;gap:4px;margin-bottom:4px;">
-        <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);">VOL (MWh)</span>
-        <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);text-align:center;">PRICE</span>
-        <span style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);text-align:right;">VOL (MWh)</span>
+      <div class="book-header">
+        <span class="data-label">VOL (MWh)</span>
+        <span class="data-label">PRICE</span>
+        <span class="data-label">VOL (MWh)</span>
       </div>
       <div id="order-book"></div>
-      <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
+      <div class="section-divider">
         <div class="kpi-row">
-          <div class="kpi"><div class="kpi-label">EXECUTE QTY</div><input class="trade-input" type="number" id="trade-qty" value="10" min="1" max="500" style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
-          <div class="kpi"><div class="kpi-label">REAL SOURCE PRICE (EUR/MWh)</div><input class="trade-input" type="number" id="trade-px" value="" readonly style="background:transparent;border:none;padding:0;font-size:15px;font-weight:500;width:100%;"></div>
+          <div class="kpi"><div class="kpi-label">EXECUTE QTY</div><input class="trade-input trade-input--compact" type="number" id="trade-qty" value="10" min="1" max="500"></div>
+          <div class="kpi"><div class="kpi-label">REAL SOURCE PRICE (EUR/MWh)</div><input class="trade-input trade-input--compact" type="number" id="trade-px" value="" readonly></div>
         </div>
-        <button class="trade-btn buy-btn" onclick="executeTrade('BUY')">BUY (LONG)</button>
-        <button class="trade-btn sell-btn" onclick="executeTrade('SELL')">SELL (SHORT)</button>
-        <div id="trade-status" role="status" aria-live="polite" style="font-size:11px;color:var(--color-text-secondary);"></div>
+        <button class="trade-btn buy-btn" type="button" onclick="executeTrade('BUY')">BUY (LONG)</button>
+        <button class="trade-btn sell-btn" type="button" onclick="executeTrade('SELL')">SELL (SHORT)</button>
+        <div id="trade-status" class="trade-status" role="status" aria-live="polite"></div>
       </div>
     </div>
 
     <div class="panel">
       <div class="panel-title">OPEN POSITIONS</div>
       <div id="positions"></div>
-      <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
-        <div class="panel-title" style="margin-bottom:6px;">TRADE LOG</div>
+      <div class="section-divider">
+        <div class="panel-title panel-subtitle">TRADE LOG</div>
         <div class="trade-log" id="trade-log"></div>
       </div>
     </div>
@@ -196,8 +252,8 @@ body { font-family: var(--font-mono); }
     <div class="panel">
       <div class="panel-title">MARKET SPREADS & STATS</div>
       <div id="spreads"></div>
-      <div style="margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;">
-        <div class="panel-title" style="margin-bottom:6px;">SESSION KPIs</div>
+      <div class="section-divider">
+        <div class="panel-title panel-subtitle">SESSION KPIs</div>
         <div class="kpi-row">
           <div class="kpi"><div class="kpi-label">SOURCE AVG TODAY</div><div class="kpi-val" id="kpi-vwap">—</div></div>
           <div class="kpi"><div class="kpi-label">PAPER EXECUTION VWAP</div><div class="kpi-val" id="kpi-execution-vwap">—</div></div>
@@ -297,7 +353,7 @@ function showServerStatus(connected, message = '') {
   const stale = connected && quote?.freshness === 'stale';
   const label = !connected ? 'SERVER OFFLINE' : fresh ? 'REAL SOURCE PRICE' :
     stale ? 'REAL PRICE STALE' : quote?.freshness === 'not_covered' ? 'PRODUCT NOT COVERED' : 'PRICE UNAVAILABLE';
-  const color = fresh ? '#3B6D11' : '#A32D2D';
+  const color = fresh ? 'var(--color-text-positive)' : 'var(--color-text-negative)';
   status.innerHTML = `<span class="status-dot" style="background:${color}"></span><span class="status-txt" style="color:${color}">${label}</span>`;
   const error = document.getElementById('connection-error');
   const zoneStatus = dataStatus?.zoneSync?.find(zone=>zone.biddingZone===quote?.biddingZone);
@@ -328,6 +384,10 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[character]));
+}
+
+function designToken(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 async function refreshState() {
@@ -382,10 +442,19 @@ function renderGrid() {
     const pct = isFresh && mk.prev ? mk.change / mk.prev * 100 : null;
     const card = document.createElement('div');
     card.className = 'market-card' + (selectedMarket.id===m.id?' selected':'');
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-pressed', String(selectedMarket.id===m.id));
+    card.tabIndex = 0;
     card.onclick = () => selectMarket(m);
+    card.onkeydown = event => {
+      if(event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        selectMarket(m);
+      }
+    };
     const history = (priceHistory[m.id] || []).slice(-10).map(point => point.price);
     const spark = history.length > 1
-      ? `<svg class="spark" viewBox="0 0 80 28" aria-label="Historical source prices"><polyline points="${history.map((value,index)=>`${index*(80/(history.length-1))},${28-(value-Math.min(...history))/(Math.max(...history)-Math.min(...history)+0.1)*24}`).join(' ')}" fill="none" stroke="${isUp?'#639922':'#A32D2D'}" stroke-width="1.5"/></svg>`
+      ? `<svg class="spark" viewBox="0 0 80 28" aria-label="Historical source prices"><polyline points="${history.map((value,index)=>`${index*(80/(history.length-1))},${28-(value-Math.min(...history))/(Math.max(...history)-Math.min(...history)+0.1)*24}`).join(' ')}" fill="none" stroke="${isUp?'var(--color-text-positive)':'var(--color-text-negative)'}" stroke-width="1.5"/></svg>`
       : '<span class="market-unavailable">No source history</span>';
     const changeBadge = pct === null ? (mk.freshness==='stale'?'STALE':'—') : `${pct>0?'+':''}${pct.toFixed(2)}%`;
     const price = hasPrice ? `€${mk.price.toFixed(2)}` : '—';
@@ -394,7 +463,7 @@ function renderGrid() {
       ? (!mk.biddingZone ? 'Product not covered by source' :
         zoneStatus?.lastError ? `Feed unavailable · ${escapeHtml(zoneStatus.lastError)}` : 'Waiting for feed sync')
       : !isFresh ? 'Stale source observation' : `${isUp?'▲':'▼'} ${Math.abs(mk.change).toFixed(2)} €/MWh`;
-    card.innerHTML = `<div class="mc-header"><div><div class="mc-name">${escapeHtml(mk.name)}</div><div class="mc-product">${escapeHtml(mk.region)} · ${escapeHtml(mk.product)}</div></div><div style="font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:4px;background:${!isFresh?'var(--color-background-secondary)':isUp?'#EAF3DE':'#FCEBEB'};color:${!isFresh?'var(--color-text-secondary)':isUp?'#3B6D11':'#A32D2D'}">${changeBadge}</div></div><div class="mc-price">${price}</div><div class="mc-change ${!isFresh?'neutral':isUp?'up':'down'}">${movement}</div>${spark}`;
+    card.innerHTML = `<div class="mc-header"><div><div class="mc-name">${escapeHtml(mk.name)}</div><div class="mc-product">${escapeHtml(mk.region)} · ${escapeHtml(mk.product)}</div></div><div class="change-badge ${!isFresh?'neutral':isUp?'positive':'negative'}">${changeBadge}</div></div><div class="mc-price">${price}</div><div class="mc-change ${!isFresh?'neutral':isUp?'up':'down'}">${movement}</div>${spark}`;
     grid.appendChild(card);
   });
 }
@@ -423,14 +492,14 @@ function renderOrderBook() {
     const px = mid + spread*i + (Math.random()-0.5)*0.3;
     const vol = (Math.random()*80+10).toFixed(0);
     const depth = Math.min(90, vol*0.8);
-    html += `<div class="ob-row"><div class="ob-vol" style="position:relative;z-index:1;"></div><div class="ob-price-ask" style="position:relative;z-index:1;">${px.toFixed(2)}</div><div class="ob-vol" style="position:relative;z-index:1;color:#A32D2D;">${vol}</div><div class="ob-depth-ask" style="width:${depth}%"></div></div>`;
+    html += `<div class="ob-row"><div class="ob-vol ob-value"></div><div class="ob-price-ask ob-value">${px.toFixed(2)}</div><div class="ob-vol ob-vol--ask ob-value">${vol}</div><div class="ob-depth-ask" style="width:${depth}%"></div></div>`;
   }
   html += `<div class="ob-spread">spread: ${(spread*2).toFixed(2)} €/MWh | mid: ${mid.toFixed(2)}</div>`;
   for(let i=1;i<=4;i++) {
     const px = mid - spread*i + (Math.random()-0.5)*0.3;
     const vol = (Math.random()*80+10).toFixed(0);
     const depth = Math.min(90, vol*0.8);
-    html += `<div class="ob-row"><div class="ob-vol" style="position:relative;z-index:1;color:#3B6D11;">${vol}</div><div class="ob-price-bid" style="position:relative;z-index:1;">${px.toFixed(2)}</div><div class="ob-vol" style="position:relative;z-index:1;"></div><div class="ob-depth-bid" style="width:${depth}%"></div></div>`;
+    html += `<div class="ob-row"><div class="ob-vol ob-vol--bid ob-value">${vol}</div><div class="ob-price-bid ob-value">${px.toFixed(2)}</div><div class="ob-vol ob-value"></div><div class="ob-depth-bid" style="width:${depth}%"></div></div>`;
   }
   ob.innerHTML = html;
   document.getElementById('trade-px').value = mk.price.toFixed(2);
@@ -446,14 +515,14 @@ function renderPositions() {
     const markStatus = p.markStatus === 'fresh'
       ? `mark ${Number(p.markPrice).toFixed(2)} ${escapeHtml(p.markUnit)} · ${escapeHtml(p.markSource)} · ${escapeHtml(p.markTimestamp)}`
       : `${escapeHtml(p.markStatus.toUpperCase())} mark`;
-    html += `<div class="pos-row"><div><div class="pos-market">${escapeHtml(p.market || p.marketId)}</div><div class="pos-vol" style="font-size:10px;">${p.side} ${p.qty}${escapeHtml(p.unit)} @ ${Number(p.entryPx).toFixed(2)} ${escapeHtml(p.currency)} · ${markStatus}</div></div><div class="pos-pnl ${pnl===null?'neutral':pnl>=0?'up':'down'}">${pnlText}</div></div>`;
+    html += `<div class="pos-row"><div><div class="pos-market">${escapeHtml(p.market || p.marketId)}</div><div class="pos-vol data-label">${p.side} ${p.qty}${escapeHtml(p.unit)} @ ${Number(p.entryPx).toFixed(2)} ${escapeHtml(p.currency)} · ${markStatus}</div></div><div class="pos-pnl ${pnl===null?'neutral':pnl>=0?'up':'down'}">${pnlText}</div></div>`;
   });
   el.innerHTML = html;
   const totalPnl = sessionTotalPnl;
   document.getElementById('total-pnl').textContent = totalPnl === null
     ? 'MARK MISSING'
     : (totalPnl>=0?'+€':'-€')+Math.abs(totalPnl).toFixed(0);
-  document.getElementById('total-pnl').className = totalPnl === null ? 'neutral' : totalPnl>=0?'up':'down';
+  document.getElementById('total-pnl').className = `metric-value ${totalPnl === null ? 'neutral' : totalPnl>=0?'up':'down'}`;
   document.getElementById('open-pos').textContent = positions.length;
 }
 
@@ -489,7 +558,7 @@ function renderTicker() {
     const mk = markets[m.id];
     if(!hasFreshPrice(mk)) return '';
     const isUp = mk.change>=0;
-    return `<div class="tick-item"><span class="tick-name">${escapeHtml(mk.name)}</span><span class="tick-price">${mk.price.toFixed(2)}</span><span class="${isUp?'up':'down'}" style="font-size:10px;">${isUp?'▲':'▼'}${Math.abs(mk.change).toFixed(2)}</span></div>`;
+    return `<div class="tick-item"><span class="tick-name">${escapeHtml(mk.name)}</span><span class="tick-price">${mk.price.toFixed(2)}</span><span class="tick-change ${isUp?'up':'down'}">${isUp?'▲':'▼'}${Math.abs(mk.change).toFixed(2)}</span></div>`;
   }).join('');
 }
 
@@ -557,8 +626,8 @@ function drawChart(values, labels = []) {
   const width = rect.width, height = rect.height;
   ctx.clearRect(0,0,width,height);
   if(values.length===0) {
-    ctx.fillStyle = '#858d95';
-    ctx.font = '12px ui-monospace, monospace';
+    ctx.fillStyle = designToken('--color-text-tertiary');
+    ctx.font = `${designToken('--font-size-md')} ${designToken('--font-mono')}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('No imported source observations for this product.',width/2,height/2);
@@ -574,20 +643,20 @@ function drawChart(values, labels = []) {
   const y = value => top + (maximum-value)*plotHeight/range;
 
   ctx.clearRect(0,0,width,height);
-  ctx.font = '10px ui-monospace, monospace';
+  ctx.font = `${designToken('--font-size-xs')} ${designToken('--font-mono')}`;
   ctx.textBaseline = 'middle';
   for(let step=0;step<=4;step++) {
     const value = minimum + range*step/4;
     const lineY = y(value);
-    ctx.strokeStyle = 'rgba(128,128,128,0.16)';
+    ctx.strokeStyle = designToken('--color-chart-grid');
     ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(left,lineY); ctx.lineTo(width-right,lineY); ctx.stroke();
-    ctx.fillStyle = '#858d95';
+    ctx.fillStyle = designToken('--color-text-tertiary');
     ctx.textAlign = 'right';
     ctx.fillText(`€${value.toFixed(0)}`,left-7,lineY);
   }
 
-  ctx.strokeStyle = '#BA7517';
+  ctx.strokeStyle = designToken('--color-text-warning');
   ctx.setLineDash([4,4]);
   ctx.beginPath(); ctx.moveTo(left,y(average)); ctx.lineTo(width-right,y(average)); ctx.stroke();
   ctx.setLineDash([]);
@@ -597,15 +666,15 @@ function drawChart(values, labels = []) {
   ctx.lineTo(x(values.length-1),top+plotHeight);
   ctx.lineTo(x(0),top+plotHeight);
   ctx.closePath();
-  ctx.fillStyle = 'rgba(55,138,221,0.08)';
+  ctx.fillStyle = designToken('--color-chart-fill');
   ctx.fill();
 
   ctx.beginPath();
   values.forEach((value,index)=>index===0?ctx.moveTo(x(index),y(value)):ctx.lineTo(x(index),y(value)));
-  ctx.strokeStyle = '#185FA5';
+  ctx.strokeStyle = designToken('--color-text-accent');
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.fillStyle = '#858d95';
+  ctx.fillStyle = designToken('--color-text-tertiary');
   ctx.textAlign = 'center';
   for(let index=0;index<values.length;index+=Math.ceil(values.length/8)) {
     ctx.fillText(labels[index] || `#${index+1}`,x(index),height-bottom/2);
@@ -614,7 +683,11 @@ function drawChart(values, labels = []) {
 
 function setTab(tab, el) {
   currentTab = tab;
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>{
+    const active = t === el;
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-pressed', String(active));
+  });
   el.classList.add('active');
   const list = getCurrentList();
   selectedMarket = list[0];
